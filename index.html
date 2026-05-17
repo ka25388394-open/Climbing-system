@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧗‍♂️ 攀岩訓練日記</title>
+    <link rel="stylesheet" href="style.css">
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js';
+        import { getFirestore } from 'https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js';
+        window.firebaseModules = { initializeApp, getFirestore };
+    </script>
+</head>
+<body>
+    <!-- 身份選擇入口 -->
+    <div id="identitySelector" class="identity-overlay">
+        <div class="identity-container">
+            <h2>選擇使用身份</h2>
+            <div class="identity-cards">
+                <!-- 開發者模式 -->
+                <div class="identity-card" data-identity="owner">
+                    <div class="identity-icon">👨‍💻</div>
+                    <h3>開發者</h3>
+                    <p>開發者模式</p>
+                    <span class="identity-hint">需要代碼</span>
+                </div>
+
+                <!-- 測試員模式 -->
+                <div class="identity-card" data-identity="tester">
+                    <div class="identity-icon">🧪</div>
+                    <h3>測試員</h3>
+                    <p>測試員模式</p>
+                    <span class="identity-hint">需要代碼</span>
+                </div>
+
+                <!-- 訪客模式 -->
+                <div class="identity-card" data-identity="guest">
+                    <div class="identity-icon">👁️</div>
+                    <h3>訪客模式</h3>
+                    <p>體驗使用</p>
+                    <span class="identity-hint">直接進入</span>
+                </div>
+            </div>
+            <p class="guest-notice">訪客資料只存在此裝置，可能不會保留。</p>
+        </div>
+    </div>
+
+    <!-- 驗證對話框 -->
+    <div id="authDialog" class="auth-overlay" style="display: none;">
+        <div class="auth-container">
+            <h3 id="authTitle">進入開發者模式</h3>
+            <div class="auth-form">
+                <input type="text" id="authUsername" placeholder="開發者代碼">
+                <input type="password" id="authPassword" placeholder="測試代碼">
+            </div>
+            <div class="auth-buttons">
+                <button id="authSubmit" class="btn btn-primary">進入</button>
+                <button id="authCancel" class="btn btn-secondary">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="app-container">
+        <!-- 身份指示器 -->
+        <div id="userIndicator" class="user-indicator">
+            <span id="currentUserDisplay">👨‍💻 開發者</span>
+            <button id="switchIdentity" class="switch-btn">切換</button>
+            <button id="messageIcon" class="message-icon" style="display: none;">📝</button>
+        </div>
+
+        <!-- 頂部標題 -->
+        <header class="app-header">
+            <h1>🧗‍♂️ 攀岩訓練日記</h1>
+            <p>每日 movement 觀察與訓練記錄</p>
+        </header>
+
+        <!-- 控制面板 -->
+        <div class="controls">
+            <button id="newEntry" class="btn btn-primary">📝 新增今日紀錄</button>
+            <button id="exportCSV" class="btn btn-secondary">📊 匯出 CSV</button>
+            <button id="exportJSON" class="btn btn-secondary">💾 匯出 JSON</button>
+            <button id="clearAll" class="btn btn-danger">🗑️ 清除所有資料</button>
+        </div>
+
+        <!-- 紀錄卡片區域 -->
+        <div id="entriesContainer" class="entries-container">
+            <!-- 訓練紀錄卡片會在這裡動態生成 -->
+        </div>
+
+        <!-- 新增紀錄表單 (隱藏) -->
+        <div id="entryForm" class="form-overlay" style="display: none;">
+            <div class="form-card">
+                <h2>📝 新增訓練紀錄</h2>
+
+                <form id="trainingForm">
+                    <!-- 基本資訊 -->
+                    <div class="form-section">
+                        <h3>📅 基本資訊</h3>
+                        <div class="form-group">
+                            <label>日期</label>
+                            <input type="date" id="date" required>
+                        </div>
+                        <div class="form-group journal-main">
+                            <label>今日身體狀態</label>
+                            <select id="todayCondition">
+                                <option value="good">💪 狀態好 - 可全力訓練</option>
+                                <option value="normal" selected>😐 普通 - 適度訓練</option>
+                                <option value="tired">😮‍💨 狀態差 - 輕量維持</option>
+                                <option value="exhausted">😴 非常疲憊 - 需要休息</option>
+                            </select>
+                        </div>
+                        <div class="form-group journal-main">
+                            <label>今日訓練類型</label>
+                            <div class="radio-group">
+                                <label><input type="radio" name="trainingType" value="攀岩"> 🧗 攀岩</label>
+                                <label><input type="radio" name="trainingType" value="功能訓練"> 💪 功能訓練</label>
+                            </div>
+                        </div>
+                        <div class="form-group journal-main">
+                            <label>今日Program</label>
+                            <select id="programSelect">
+                                <option value="">請先選擇訓練類型</option>
+                            </select>
+                        </div>
+                        <div class="form-group journal-main">
+                            <label>完成度</label>
+                            <div class="radio-group">
+                                <label><input type="radio" name="completion" value="all"> 全部完成</label>
+                                <label><input type="radio" name="completion" value="most"> 大部分</label>
+                                <label><input type="radio" name="completion" value="half"> 一半</label>
+                                <label><input type="radio" name="completion" value="little"> 很少</label>
+                            </div>
+                        </div>
+                        <div class="form-group journal-main">
+                            <label>Movement 狀態</label>
+                            <div id="itemStatusList" class="item-status-container">
+                                <!-- 動態生成單item狀態選擇 -->
+                            </div>
+                        </div>
+                        <div class="form-group journal-main">
+                            <label>movement備註</label>
+                            <input type="text" id="movementNotes" placeholder="一句話記錄今天的 movement 感覺">
+                        </div>
+
+                        <!-- 隱藏的舊欄位以保持相容性 -->
+                        <div style="display: none;">
+                            <select id="week">
+                                <option value="W1">Week 1</option>
+                            </select>
+                            <select id="mainTraining">
+                                <option value="攀岩">攀岩</option>
+                            </select>
+                            <input type="range" id="fatigue" min="1" max="10" value="5">
+                            <span id="fatigueValue">5</span>
+                        </div>
+                    </div>
+
+                    <!-- 今日體感 - 隱藏複雜區塊 -->
+                    <div class="form-section" style="display: none;">
+                        <h3>🧠 今日體感</h3>
+                        <div class="form-group">
+                            <label>🔵 核心傳導狀態</label>
+                            <div class="radio-group">
+                                <label><input type="radio" name="coreState" value="很差"> 很差</label>
+                                <label><input type="radio" name="coreState" value="普通"> 普通</label>
+                                <label><input type="radio" name="coreState" value="穩"> 穩</label>
+                                <label><input type="radio" name="coreState" value="很順"> 很順</label>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>🟢 單腳穩定狀態</label>
+                            <div class="radio-group">
+                                <label><input type="radio" name="legState" value="很晃"> 很晃</label>
+                                <label><input type="radio" name="legState" value="普通"> 普通</label>
+                                <label><input type="radio" name="legState" value="穩"> 穩</label>
+                                <label><input type="radio" name="legState" value="很穩"> 很穩</label>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>🔴 肩胛穩定狀態</label>
+                            <div class="radio-group">
+                                <label><input type="radio" name="shoulderState" value="掉肩"> 掉肩</label>
+                                <label><input type="radio" name="shoulderState" value="普通"> 普通</label>
+                                <label><input type="radio" name="shoulderState" value="穩"> 穩</label>
+                                <label><input type="radio" name="shoulderState" value="很穩"> 很穩</label>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>😴 疲勞狀態 (1-10)</label>
+                            <input type="range" id="fatigue" min="1" max="10" value="5">
+                            <span id="fatigueValue">5</span>
+                        </div>
+                    </div>
+
+                    <!-- 8 週課表選擇 - 隱藏，改為獨立課程建立 -->
+                    <div class="form-section background-reference collapsed" style="display: none;">
+                        <h3 class="collapsible-header">📅 8 週課表參考 <span class="toggle-hint">(點擊展開)</span></h3>
+                        <div class="collapsible-content" style="display: none;">
+                        <div class="form-group">
+                            <label>選擇週次</label>
+                            <select id="scheduleWeek">
+                                <option value="">選擇 Week</option>
+                                <option value="1">Week 1 - 動作熟悉期</option>
+                                <option value="2">Week 2 - 動作熟悉期</option>
+                                <option value="3">Week 3 - 穩定建立期</option>
+                                <option value="4">Week 4 - 穩定建立期</option>
+                                <option value="5">Week 5 - 整合強化期</option>
+                                <option value="6">Week 6 - 整合強化期</option>
+                                <option value="7">Week 7 - movement精進期</option>
+                                <option value="8">Week 8 - movement精進期</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>選擇訓練日</label>
+                            <select id="scheduleDay">
+                                <option value="">選擇 Day</option>
+                                <option value="1">Day 1 - 肩胛穩定 × 拉力日</option>
+                                <option value="2">Day 2 - 攀岩技術日</option>
+                                <option value="3">Day 3 - 核心傳導 × anti-rotation 日</option>
+                                <option value="4">Day 4 - 單腳穩定 × 採點日</option>
+                                <option value="5">Day 5 - 攀岩整合日</option>
+                                <option value="6">Day 6 - 恢復 / flow movement 日</option>
+                            </select>
+                        </div>
+
+                        <!-- 課表資訊顯示 -->
+                        <div id="scheduleInfo" class="schedule-info" style="display: none;">
+                            <!-- 動態生成的課表資訊 -->
+                        </div>
+
+                        <div class="form-group">
+                            <button type="button" id="applySchedule" class="btn btn-primary" style="display: none;">📅 套用到今日紀錄</button>
+                        </div>
+                        </div>
+                    </div>
+
+                    <!-- 訓練模板選擇 - 隱藏，改為獨立課程建立 -->
+                    <div class="form-section background-reference collapsed" style="display: none;">
+                        <h3 class="collapsible-header">📋 訓練模板參考 <span class="toggle-hint">(點擊展開)</span></h3>
+                        <div class="collapsible-content" style="display: none;">
+                        <div class="form-group">
+                            <label>選擇今日訓練模板</label>
+                            <select id="trainingTemplate">
+                                <option value="">自訂訓練內容</option>
+                                <option value="shoulder">🔴 肩胛穩定 × 拉力日</option>
+                                <option value="core">🔵 核心傳導 × anti-rotation 日</option>
+                                <option value="leg">🟢 單腳穩定 × 採點日</option>
+                                <option value="climbing_technique">🧗 攀岩技術日</option>
+                                <option value="climbing_integration">🧗 攀岩整合日</option>
+                                <option value="recovery">🌙 恢復 / flow movement 日</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <button type="button" id="loadTemplate" class="btn btn-secondary" style="display: none;">載入模板</button>
+                        </div>
+                        </div>
+                    </div>
+
+                    <!-- 訓練內容 - 隱藏詳細記錄區塊 -->
+                    <div class="form-section journal-primary" style="display: none;">
+                        <h3>📝 今日訓練記錄</h3>
+                        <div class="form-group journal-main">
+                            <label>主要訓練與觀察</label>
+                            <textarea id="exercises" class="journal-textarea" placeholder="今天做了什麼訓練？有什麼身體感受？&#10;&#10;例如：&#10;- 單邊引體練習，右邊比較穩&#10;- 壓腳練習時核心感覺不錯&#10;- 攀岩時發現肩膀比較不會聳...&#10;&#10;(可選擇上方模板參考)"></textarea>
+                        </div>
+
+                        <!-- 模板詳細內容區域 -->
+                        <div id="templateDetails" class="template-details" style="display: none;">
+                            <div class="template-exercises">
+                                <!-- 動態生成的模板訓練項目會在這裡 -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- RPE/品質/轉移感 - 隱藏 -->
+                    <div style="display: none;">
+                        <div class="form-group quantified-low-priority">
+                            <label>今日強度感受</label>
+                            <select id="rpe">
+                                <option value="3">🟢 輕鬆</option>
+                                <option value="5">🟡 適中</option>
+                                <option value="7" selected>🟠 有點累</option>
+                                <option value="8">🔴 很累</option>
+                                <option value="9">🔴 超累</option>
+                            </select>
+                        </div>
+                        <div class="form-group quantified-low-priority">
+                            <label>動作完成感</label>
+                            <select id="quality">
+                                <option value="4">😕 不太順</option>
+                                <option value="6">😐 普通</option>
+                                <option value="7" selected>😊 還不錯</option>
+                                <option value="8">😄 很順</option>
+                                <option value="9">🤩 超順</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>是否有攀岩轉移感</label>
+                            <select id="transfer">
+                                <option value="明顯有">✅ 明顯有</option>
+                                <option value="有一點">🟡 有一點</option>
+                                <option value="不確定">❓ 不確定</option>
+                                <option value="沒有">❌ 沒有</option>
+                                <option value="反而疲勞">😴 反而疲勞</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- 隔天感受與備註 - 隱藏詳細觀察區塊 -->
+                    <div class="form-section journal-secondary" style="display: none;">
+                        <h3>🌙 恢復觀察與想法</h3>
+                        <div class="form-group journal-main">
+                            <label>隔天身體感受</label>
+                            <textarea id="nextDayFeeling" class="journal-textarea" placeholder="隔天身體有什麼變化？&#10;&#10;例如：&#10;- 核心有點酸但攀岩時感覺比較穩&#10;- 肩膀不會痛了&#10;- 腿部力量感覺有進步..."></textarea>
+                        </div>
+                        <div class="form-group journal-main">
+                            <label>其他觀察與想法</label>
+                            <textarea id="notes" class="journal-textarea" placeholder="任何其他的觀察、想法或發現...&#10;&#10;例如：&#10;- 今天發現某個動作的訣竅&#10;- 心情狀態對攀岩的影響&#10;- 想要嘗試的新練習..."></textarea>
+                        </div>
+                    </div>
+
+                    <!-- 表單按鈕 -->
+                    <div class="form-buttons">
+                        <button type="submit" class="btn btn-primary">💾 儲存紀錄</button>
+                        <button type="button" id="cancelForm" class="btn btn-secondary">❌ 取消</button>
+                    </div>
+                </form>
+
+                <!-- Journal 陪伴訊息 -->
+                <div id="journalCompanionNote" class="journal-companion-note" style="display: none;">
+                    <div class="companion-message-text"></div>
+                </div>
+
+                <!-- Program Builder - 獨立表單區塊 -->
+                <div class="form-section background-reference collapsed" style="margin-top: 2rem;">
+                    <h3 class="collapsible-header">⚙️ Program 建立器 <span class="toggle-hint">(點擊展開)</span></h3>
+                    <div class="collapsible-content" style="display: none;">
+                        <form id="programBuilderForm">
+                            <div class="form-group">
+                                <label>Program 名稱</label>
+                                <input type="text" id="programName" placeholder="例如：外攀高腳期、核心強化期" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Program 類型</label>
+                                <div class="radio-group">
+                                    <label><input type="radio" name="programType" value="攀岩"> 🧗 攀岩</label>
+                                    <label><input type="radio" name="programType" value="功能訓練"> 💪 功能訓練</label>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Category</label>
+                                <select id="programCategory">
+                                    <option value="">請先選擇 Program 類型</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Movement Items (最多5個)</label>
+                                <p style="font-size: 0.85rem; color: #888; margin-bottom: 0.8rem;">
+                                    💡 請輸入 movement 層級項目，例如：高腳、張力、route reading、lock off
+                                </p>
+                                <div class="program-items-container">
+                                    <input type="text" id="programItem1" placeholder="movement item 1" class="program-item-input">
+                                    <input type="text" id="programItem2" placeholder="movement item 2" class="program-item-input">
+                                    <input type="text" id="programItem3" placeholder="movement item 3" class="program-item-input">
+                                    <input type="text" id="programItem4" placeholder="movement item 4" class="program-item-input">
+                                    <input type="text" id="programItem5" placeholder="movement item 5" class="program-item-input">
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <button type="submit" class="btn btn-primary">✅ 建立 Program</button>
+                            </div>
+                        </form>
+
+                        <!-- Delete Custom Program Section -->
+                        <div class="delete-program-section" style="margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid #e0e0e0;">
+                            <h4 style="margin-bottom: 1rem; font-size: 1rem; color: #666;">🗑️ 刪除自訂 Program</h4>
+                            <div class="form-group">
+                                <label>選擇要刪除的自訂 Program</label>
+                                <select id="deleteCustomProgramSelect">
+                                    <option value="">選擇 Program</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <button type="button" id="deleteCustomProgramBtn" class="btn btn-danger" style="font-size: 0.85rem;">🗑️ 刪除 Program</button>
+                                <p style="font-size: 0.75rem; color: #888; margin-top: 0.5rem;">
+                                    ⚠️ 僅可刪除未被使用的自訂 Program，已有訓練紀錄的無法刪除
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- 留言面板 -->
+    <div id="messageOverlay" class="message-overlay" style="display: none;">
+        <div id="messagePanel" class="message-panel">
+            <div class="message-header">
+                <h3>💫 小小留言板</h3>
+                <button id="closeMsgPanel" class="close-btn">×</button>
+            </div>
+            <div id="messageContainer" class="message-container">
+                <!-- 留言記錄會在這裡動態生成 -->
+            </div>
+            <div class="message-input-area">
+                <textarea id="messageInput" placeholder="想說什麼..." rows="3"></textarea>
+                <button id="sendMessage" class="btn btn-primary">送出</button>
+                <button id="sendToTester" class="btn btn-secondary" style="display: none; margin-left: 0.5rem;">給測試員留言</button>
+                <button id="sendOfficialToTester" class="btn btn-secondary" style="display: none; margin-left: 0.5rem;">給測試員正式回覆</button>
+                <button id="resetTesterTest" class="btn btn-secondary" style="display: none; margin-left: 0.5rem; opacity: 0.7; font-size: 0.9rem;">重置 Alice 留言測試</button>
+                <button id="clearOwnerSpace" class="btn btn-secondary" style="display: none; margin-left: 0.5rem; opacity: 0.7; font-size: 0.9rem;">清理 Xavier 留言空間</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Onboarding Modal -->
+    <div id="onboardingModal" class="onboarding-overlay" style="display: none;">
+        <div class="onboarding-container">
+            <h2>🎉 今日 movement 已儲存成功！</h2>
+            <div class="onboarding-content">
+                <p>尊貴的 VIP 測試員您好（目前只有一位）</p>
+                <p>偷偷跟你說，<br>右下角有個小小留言板。</p>
+                <p>如果有：</p>
+                <ul>
+                    <li>奇怪 bug</li>
+                    <li>想吐槽的地方</li>
+                    <li>今天的 movement 感覺</li>
+                    <li>或突然想到什麼</li>
+                </ul>
+                <p>都可以留在那邊。</p>
+                <p>我看得到，<br>你也看得到。</p>
+                <p>有點像偷偷養的小小開發日記😆</p>
+                <p>沒有壓力，<br>想到再留就好。</p>
+                <p class="onboarding-thanks">然後——</p>
+                <p class="onboarding-thanks">謝謝你願意玩這個小東西。<br>真的。</p>
+            </div>
+            <button id="onboardingOk" class="btn btn-primary">知道了</button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

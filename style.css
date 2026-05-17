@@ -1,0 +1,1339 @@
+/* 攀岩訓練日記 - 深色系運動風格 */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+    color: #e0e0e0;
+    line-height: 1.6;
+    min-height: 100vh;
+    overflow-x: hidden;
+}
+
+.app-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+/* 頂部標題 - 運動日記感 */
+.app-header {
+    text-align: center;
+    margin-bottom: 3rem;
+    padding: 2rem 0;
+    background: rgba(45, 45, 45, 0.3);
+    border-radius: 15px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.app-header h1 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 0.5rem;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.app-header p {
+    color: #a0a0a0;
+    font-size: 1.1rem;
+    font-weight: 300;
+}
+
+/* 控制面板 */
+.controls {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.btn {
+    padding: 0.8rem 1.5rem;
+    border: none;
+    border-radius: 10px;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #4a9eff 0%, #0066cc 100%);
+    color: white;
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(74, 158, 255, 0.3);
+}
+
+.btn-secondary {
+    background: linear-gradient(135deg, #666 0%, #444 100%);
+    color: white;
+}
+
+.btn-secondary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(255, 255, 255, 0.1);
+}
+
+.btn-danger {
+    background: linear-gradient(135deg, #ff6b6b 0%, #cc4444 100%);
+    color: white;
+}
+
+.btn-danger:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(255, 107, 107, 0.3);
+}
+
+/* 紀錄卡片容器 */
+.entries-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+    gap: 2rem;
+    margin-top: 2rem;
+}
+
+/* 單一紀錄卡片 - 日記風格 */
+.entry-card {
+    background: rgba(45, 45, 45, 0.8);
+    border-radius: 15px;
+    padding: 2rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    transition: all 0.3s ease;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.entry-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+    border-color: rgba(74, 158, 255, 0.3);
+}
+
+.entry-header {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.entry-date {
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: #4a9eff;
+    margin-bottom: 0.3rem;
+}
+
+.entry-week {
+    color: #a0a0a0;
+    font-size: 0.9rem;
+}
+
+.entry-section {
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    border-left: 3px solid #4a9eff;
+}
+
+.entry-section h4 {
+    color: #fff;
+    margin-bottom: 0.8rem;
+    font-size: 1.1rem;
+}
+
+.entry-section p {
+    color: #c0c0c0;
+    margin-bottom: 0.5rem;
+    line-height: 1.5;
+}
+
+/* Entry Card System Echo - 極簡風格 */
+.entry-system-echo {
+    margin-top: 1rem;
+    padding-top: 0.8rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 0.85rem;
+    line-height: 1.5;
+    font-style: italic;
+}
+
+/* 狀態指示器 */
+.status-indicator {
+    display: inline-block;
+    padding: 0.3rem 0.8rem;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    margin: 0.2rem;
+}
+
+.status-good {
+    background: rgba(76, 175, 80, 0.3);
+    color: #4caf50;
+    border: 1px solid #4caf50;
+}
+
+.status-ok {
+    background: rgba(255, 193, 7, 0.3);
+    color: #ffc107;
+    border: 1px solid #ffc107;
+}
+
+.status-bad {
+    background: rgba(244, 67, 54, 0.3);
+    color: #f44336;
+    border: 1px solid #f44336;
+}
+
+/* 表單覆蓋層 */
+.form-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    backdrop-filter: blur(5px);
+    overflow-y: auto;
+    padding: 2rem;
+}
+
+.form-card {
+    background: linear-gradient(135deg, #2d2d2d 0%, #1a1a1a 100%);
+    border-radius: 20px;
+    padding: 2rem;
+    max-width: 600px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.form-card h2 {
+    color: #fff;
+    margin-bottom: 2rem;
+    text-align: center;
+    font-size: 1.8rem;
+}
+
+/* 表單區塊 */
+.form-section {
+    margin-bottom: 2rem;
+    padding: 1.5rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    border-left: 3px solid #4a9eff;
+}
+
+/* Journal 主要區塊 - 提高視覺權重 */
+.journal-primary {
+    background: rgba(74, 158, 255, 0.1);
+    border-left: 4px solid #4a9eff;
+    padding: 2rem;
+    margin-bottom: 2.5rem;
+}
+
+.journal-secondary {
+    background: rgba(255, 255, 255, 0.08);
+    border-left: 3px solid #4a9eff;
+    padding: 2rem;
+}
+
+/* 背景參考區塊 - 降低存在感 */
+.background-reference {
+    background: rgba(255, 255, 255, 0.02);
+    border-left: 2px solid rgba(74, 158, 255, 0.3);
+    opacity: 0.7;
+    margin-bottom: 1rem;
+    padding: 1rem;
+}
+
+/* 可收合標題 */
+.collapsible-header {
+    cursor: pointer;
+    transition: all 0.3s ease;
+    color: #888;
+    font-size: 1rem;
+}
+
+.collapsible-header:hover {
+    color: #4a9eff;
+}
+
+.toggle-hint {
+    font-size: 0.8rem;
+    opacity: 0.6;
+    font-weight: normal;
+}
+
+.form-section h3 {
+    color: #4a9eff;
+    margin-bottom: 1rem;
+    font-size: 1.2rem;
+}
+
+.form-group {
+    margin-bottom: 1rem;
+}
+
+.form-group label {
+    display: block;
+    color: #e0e0e0;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+    width: 100%;
+    padding: 0.8rem;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(30, 30, 30, 0.8);
+    color: #e0e0e0;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+}
+
+/* 修正 select option 深色樣式 */
+.form-group select option {
+    background: #2d2d2d;
+    color: #e0e0e0;
+    padding: 0.5rem;
+}
+
+/* 修正 input 和 select 在不同瀏覽器的樣式 */
+.form-group select {
+    background: rgba(30, 30, 30, 0.9) url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 4 5'%3E%3Cpath fill='%23a0a0a0' d='M2 0L0 2h4zm0 5L0 3h4z'/%3E%3C/svg%3E") no-repeat right 0.8rem center;
+    background-size: 12px;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+}
+
+/* 修正 checkbox 和 radio 樣式 */
+input[type="radio"],
+input[type="checkbox"] {
+    width: auto !important;
+    margin-right: 0.5rem;
+    accent-color: #4a9eff;
+}
+
+/* 修正 range slider 樣式 */
+input[type="range"] {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+    outline: none;
+    border-color: #4a9eff;
+    box-shadow: 0 0 0 2px rgba(74, 158, 255, 0.2);
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.form-group textarea {
+    min-height: 80px;
+    resize: vertical;
+}
+
+/* Journal 文字區域 - 擴大並強調 */
+.journal-textarea {
+    min-height: 120px !important;
+    font-size: 1.1rem !important;
+    line-height: 1.6 !important;
+    padding: 1.2rem !important;
+    background: rgba(255, 255, 255, 0.1) !important;
+    border: 2px solid rgba(74, 158, 255, 0.3) !important;
+}
+
+.journal-textarea:focus {
+    background: rgba(255, 255, 255, 0.15) !important;
+    border-color: #4a9eff !important;
+    box-shadow: 0 0 0 3px rgba(74, 158, 255, 0.15) !important;
+}
+
+/* Journal 主要文字群組 */
+.journal-main label {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 0.8rem;
+}
+
+/* 量化元素 - 降低視覺權重 */
+.quantified-low-priority {
+    opacity: 0.7;
+    margin-bottom: 0.8rem;
+}
+
+.quantified-low-priority label {
+    font-size: 0.9rem;
+    color: #a0a0a0;
+    font-weight: normal;
+}
+
+.quantified-low-priority select {
+    background: rgba(30, 30, 30, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    font-size: 0.9rem;
+}
+
+/* Checkbox 區域樣式 */
+.checkbox-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+    margin-top: 0.5rem;
+}
+
+.checkbox-group label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    padding: 0.5rem 0.8rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 20px;
+    transition: all 0.3s ease;
+    margin-bottom: 0;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.checkbox-group label:hover {
+    background: rgba(74, 158, 255, 0.2);
+    border-color: rgba(74, 158, 255, 0.4);
+}
+
+.checkbox-group input[type="checkbox"] {
+    margin-right: 0.5rem;
+    accent-color: #4a9eff;
+}
+
+.checkbox-group label:has(input:checked) {
+    background: rgba(74, 158, 255, 0.3);
+    border-color: #4a9eff;
+    color: #fff;
+}
+
+/* 單Item狀態模式樣式 */
+.item-status-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.item-status-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.item-name {
+    font-weight: 500;
+    color: #fff;
+    font-size: 1rem;
+    min-width: 100px;
+}
+
+.status-options {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.status-option {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    padding: 0.4rem 0.8rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 20px;
+    transition: all 0.3s ease;
+    margin-bottom: 0;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    font-size: 0.85rem;
+}
+
+.status-option:hover {
+    background: rgba(74, 158, 255, 0.2);
+    border-color: rgba(74, 158, 255, 0.4);
+}
+
+.status-option input[type="radio"] {
+    margin-right: 0.3rem;
+    accent-color: #4a9eff;
+}
+
+.status-option:has(input:checked) {
+    background: rgba(74, 158, 255, 0.3);
+    border-color: #4a9eff;
+    color: #fff;
+}
+
+.status-text {
+    white-space: nowrap;
+    user-select: none;
+}
+
+/* 響應式調整 */
+@media (max-width: 768px) {
+    .item-status-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.8rem;
+    }
+
+    .item-name {
+        min-width: auto;
+        font-size: 1.1rem;
+    }
+
+    .status-options {
+        flex-wrap: wrap;
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .status-option {
+        font-size: 0.8rem;
+        padding: 0.3rem 0.6rem;
+    }
+}
+
+/* 單選按鈕組 */
+.radio-group {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.radio-group label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    padding: 0.5rem 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 20px;
+    transition: all 0.3s ease;
+    margin-bottom: 0;
+}
+
+.radio-group label:hover {
+    background: rgba(74, 158, 255, 0.2);
+}
+
+.radio-group input[type="radio"] {
+    width: auto;
+    margin-right: 0.5rem;
+}
+
+/* 滑桿 */
+input[type="range"] {
+    width: calc(100% - 50px);
+    margin-right: 10px;
+}
+
+input[type="range"]::-webkit-slider-track {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 5px;
+    height: 8px;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+    background: #4a9eff;
+    border-radius: 50%;
+    height: 20px;
+    width: 20px;
+}
+
+/* 表單按鈕 */
+.form-buttons {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    margin-top: 2rem;
+    padding-top: 2rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* 刪除按鈕 */
+.delete-btn {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    background: rgba(244, 67, 54, 0.2);
+    border: 1px solid #f44336;
+    color: #f44336;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.delete-btn:hover {
+    background: #f44336;
+    color: white;
+}
+
+.entry-card {
+    position: relative;
+}
+
+/* 訓練模板樣式 */
+.template-details {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.template-exercise {
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    border-left: 3px solid #4a9eff;
+}
+
+.exercise-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.8rem;
+}
+
+.exercise-name {
+    font-weight: 600;
+    color: #fff;
+    font-size: 1.1rem;
+}
+
+.exercise-specs {
+    font-size: 0.9rem;
+    color: #a0a0a0;
+    margin-bottom: 0.5rem;
+}
+
+.exercise-note {
+    font-size: 0.85rem;
+    color: #888;
+    font-style: italic;
+    margin-bottom: 1rem;
+}
+
+.exercise-inputs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 0.8rem;
+}
+
+.input-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.input-group label {
+    font-size: 0.8rem;
+    color: #b0b0b0;
+    margin-bottom: 0.3rem;
+}
+
+.input-group input,
+.input-group select {
+    padding: 0.5rem;
+    font-size: 0.9rem;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #e0e0e0;
+}
+
+/* === 身份選擇入口樣式 === */
+
+/* 身份選擇覆蓋層 */
+.identity-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(15, 23, 42, 0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    backdrop-filter: blur(5px);
+}
+
+.identity-container {
+    text-align: center;
+    padding: 2rem;
+    max-width: 800px;
+    width: 90%;
+}
+
+.identity-container h2 {
+    color: #f8fafc;
+    font-size: 1.5rem;
+    margin-bottom: 2rem;
+    font-weight: 300;
+}
+
+/* 身份卡片容器 */
+.identity-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+/* 身份卡片樣式 */
+.identity-card {
+    background: rgba(51, 65, 85, 0.6);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 12px;
+    padding: 2rem 1.5rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    min-height: 180px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.identity-card:hover {
+    background: rgba(51, 65, 85, 0.8);
+    border-color: #4a9eff;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(74, 158, 255, 0.15);
+}
+
+.identity-icon {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+}
+
+.identity-card h3 {
+    color: #f8fafc;
+    font-size: 1.2rem;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+}
+
+.identity-card p {
+    color: #94a3b8;
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+}
+
+.identity-hint {
+    color: #64748b;
+    font-size: 0.75rem;
+    padding: 0.3rem 0.8rem;
+    background: rgba(100, 116, 139, 0.2);
+    border-radius: 12px;
+}
+
+.guest-notice {
+    color: #64748b;
+    font-size: 0.8rem;
+    margin-top: 1rem;
+    font-style: italic;
+}
+
+/* 驗證對話框 */
+.auth-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(15, 23, 42, 0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10001;
+}
+
+.auth-container {
+    background: #1e293b;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 12px;
+    padding: 2rem;
+    max-width: 350px;
+    width: 90%;
+    text-align: center;
+}
+
+.auth-container h3 {
+    color: #f8fafc;
+    font-size: 1.1rem;
+    margin-bottom: 1.5rem;
+    font-weight: 400;
+}
+
+.auth-form {
+    margin-bottom: 1.5rem;
+}
+
+.auth-form input {
+    width: 100%;
+    padding: 0.8rem;
+    margin-bottom: 1rem;
+    background: rgba(51, 65, 85, 0.6);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 6px;
+    color: #f8fafc;
+    font-size: 0.9rem;
+    box-sizing: border-box;
+}
+
+.auth-form input::placeholder {
+    color: #64748b;
+}
+
+.auth-form input:focus {
+    outline: none;
+    border-color: #4a9eff;
+    box-shadow: 0 0 0 3px rgba(74, 158, 255, 0.1);
+}
+
+.auth-buttons {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+}
+
+.auth-buttons button {
+    padding: 0.7rem 1.5rem;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+/* 身份指示器 */
+.user-indicator {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(30, 41, 59, 0.9);
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    backdrop-filter: blur(10px);
+    z-index: 1000;
+}
+
+#currentUserDisplay {
+    color: #f8fafc;
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+.switch-btn {
+    background: rgba(74, 158, 255, 0.2);
+    border: 1px solid rgba(74, 158, 255, 0.3);
+    color: #4a9eff;
+    padding: 0.3rem 0.8rem;
+    border-radius: 12px;
+    font-size: 0.7rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.switch-btn:hover {
+    background: rgba(74, 158, 255, 0.3);
+    border-color: #4a9eff;
+}
+
+/* 隱藏主應用 */
+.identity-active .app-container {
+    display: none;
+}
+
+.input-group input:focus,
+.input-group select:focus {
+    border-color: #4a9eff;
+    box-shadow: 0 0 0 1px rgba(74, 158, 255, 0.3);
+}
+
+/* 模板選擇提示 */
+.template-hint {
+    display: none;
+    margin-top: 0.5rem;
+    padding: 0.8rem;
+    background: rgba(74, 158, 255, 0.1);
+    border-radius: 8px;
+    border: 1px solid rgba(74, 158, 255, 0.3);
+    color: #4a9eff;
+    font-size: 0.9rem;
+}
+
+.template-hint.show {
+    display: block;
+}
+
+/* 8 週課表樣式 */
+.schedule-info {
+    margin-top: 1rem;
+    padding: 0;
+}
+
+.schedule-info > div {
+    margin-bottom: 1rem;
+}
+
+/* Program Builder 樣式 */
+.program-items-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.program-item-input {
+    padding: 0.6rem;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 6px;
+    background: rgba(30, 30, 30, 0.7);
+    color: #e0e0e0;
+    font-size: 0.9rem;
+    transition: all 0.3s ease;
+}
+
+.program-item-input:focus {
+    border-color: #4a9eff;
+    background: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 0 0 2px rgba(74, 158, 255, 0.2);
+}
+
+.program-item-input::placeholder {
+    color: #666;
+    font-style: italic;
+}
+
+#programBuilderForm .btn {
+    width: 100%;
+    margin-top: 1rem;
+}
+
+/* 響應式設計 */
+@media (max-width: 768px) {
+    .app-container {
+        padding: 1rem;
+    }
+
+    .controls {
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .btn {
+        width: 100%;
+        max-width: 300px;
+    }
+
+    .form-card {
+        padding: 1rem;
+        margin: 1rem;
+    }
+
+    .radio-group {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .form-buttons {
+        flex-direction: column;
+    }
+}
+
+/* 留言板小螢幕保護 */
+@media (max-width: 520px) {
+    .message-panel {
+        width: calc(100vw - 32px);
+        max-height: 78vh;
+    }
+}
+
+/* 空狀態 */
+.empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: #666;
+}
+
+.empty-state h3 {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+    color: #888;
+}
+
+.empty-state p {
+    font-size: 1.1rem;
+    line-height: 1.6;
+}
+
+/* === 留言系統樣式 === */
+
+/* 留言 icon */
+.message-icon {
+    background: rgba(74, 158, 255, 0.1);
+    border: 1px solid rgba(74, 158, 255, 0.3);
+    color: #4a9eff;
+    border-radius: 8px;
+    padding: 0.5rem;
+    margin-left: 0.8rem;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+}
+
+.message-icon:hover {
+    background: rgba(74, 158, 255, 0.2);
+    transform: translateY(-1px);
+}
+
+/* 留言遮罩背景 */
+.message-overlay {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: transparent;
+    z-index: 1500;
+}
+
+/* 留言面板 */
+.message-panel {
+    position: relative;
+    width: 420px;
+    max-height: 72vh;
+    height: auto;
+    background: rgba(24, 24, 24, 0.96);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+    backdrop-filter: blur(10px);
+}
+
+.message-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.message-header h3 {
+    color: #e0e0e0;
+    font-size: 1.1rem;
+    margin: 0;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+}
+
+.close-btn:hover {
+    color: #ccc;
+}
+
+.message-container {
+    flex: 1;
+    padding: 12px 8px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 40vh;
+}
+
+.message {
+    display: block;
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+
+.message.user {
+    display: block;
+    background: rgba(255, 250, 230, 0.22);
+    border: 1px solid rgba(255, 250, 230, 0.22);
+    border-left: 3px solid rgba(255, 250, 230, 0.55);
+    border-radius: 4px;
+    padding: 10px 13px;
+    max-width: 280px;
+    font-size: 14px;
+    margin: 6px 0;
+    color: #e0e0e0;
+}
+
+.message.system {
+    display: block;
+    background: rgba(245, 245, 245, 0.14);
+    border: 1px solid rgba(245, 245, 245, 0.14);
+    border-left: 2px solid rgba(200, 200, 200, 0.32);
+    border-radius: 2px;
+    padding: 11px 14px;
+    max-width: 320px;
+    font-size: 13px;
+    color: rgba(220, 220, 220, 0.9);
+    margin: 8px 0;
+}
+
+.message.developer {
+    display: block;
+    background: rgba(74, 158, 255, 0.12);
+    border: 1px solid rgba(74, 158, 255, 0.15);
+    border-left: 2px solid rgba(74, 158, 255, 0.4);
+    border-radius: 3px;
+    padding: 11px 14px;
+    max-width: 320px;
+    font-size: 13px;
+    color: rgba(210, 220, 240, 0.92);
+    margin: 8px 0;
+    font-style: italic;
+}
+
+.message.official {
+    display: block;
+    background: rgba(72, 187, 120, 0.08);
+    border: 1px solid rgba(72, 187, 120, 0.12);
+    border-left: 2px solid rgba(72, 187, 120, 0.25);
+    border-radius: 3px;
+    padding: 11px 14px;
+    max-width: 320px;
+    font-size: 13px;
+    color: rgba(210, 220, 240, 0.9);
+    margin: 8px 0;
+}
+
+.message-timestamp {
+    font-size: 0.7rem;
+    color: #888;
+    margin-top: 0.5rem;
+}
+
+.message-input-area {
+    padding: 0.75rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.message-input-area textarea {
+    background: rgba(45, 45, 45, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #e0e0e0;
+    border-radius: 6px;
+    padding: 0.8rem;
+    font-family: inherit;
+    font-size: 0.9rem;
+    resize: vertical;
+    min-height: 60px;
+}
+
+.message-input-area textarea:focus {
+    outline: none;
+    border-color: rgba(74, 158, 255, 0.5);
+    background: rgba(45, 45, 45, 1);
+}
+
+.message-input-area textarea::placeholder {
+    color: #888;
+}
+
+.message-input-area button {
+    align-self: flex-end;
+    min-width: 80px;
+}
+
+/* 留言板專用小按鈕樣式 */
+.message-input-area .btn {
+    padding: 0.45rem 0.75rem;
+    font-size: 0.85rem;
+    min-height: 38px;
+}
+
+/* 留言展開/收回按鈕 */
+.message-toggle {
+    text-align: center;
+    margin: 0.5rem 0;
+}
+
+.toggle-btn {
+    background: rgba(100, 100, 100, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #999;
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.toggle-btn:hover {
+    background: rgba(100, 100, 100, 0.3);
+    color: #ccc;
+}
+
+/* Onboarding Modal */
+.onboarding-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+    backdrop-filter: blur(5px);
+}
+
+.onboarding-container {
+    background: rgba(30, 30, 30, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 15px;
+    max-width: 500px;
+    width: 90%;
+    padding: 2rem;
+    text-align: center;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+}
+
+.onboarding-container h2 {
+    color: #4a9eff;
+    margin-bottom: 1.5rem;
+    font-size: 1.3rem;
+}
+
+.onboarding-content {
+    text-align: left;
+    margin: 1.5rem 0;
+    color: #e0e0e0;
+    line-height: 1.6;
+}
+
+.onboarding-content p {
+    margin-bottom: 1rem;
+    font-size: 0.95rem;
+}
+
+.onboarding-content ul {
+    margin: 1rem 0 1rem 1.5rem;
+    color: #ccc;
+}
+
+.onboarding-content li {
+    margin-bottom: 0.3rem;
+}
+
+.onboarding-thanks {
+    color: #4a9eff !important;
+    font-weight: 500;
+    text-align: center;
+}
+
+#onboardingOk {
+    padding: 0.8rem 2rem;
+    font-size: 1rem;
+}
+
+/* 小紙條淡入動畫 */
+.message-new {
+    animation: messageSlideIn 200ms ease-out;
+}
+
+@keyframes messageSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Journal 陪伴訊息樣式 - 小紙條設計 */
+.journal-companion-note {
+    margin: 1rem 0 0.8rem 0;
+    padding: 0.7rem 1rem;
+    background: linear-gradient(135deg, rgba(74, 158, 255, 0.1) 0%, rgba(45, 45, 45, 0.2) 100%);
+    border: 1px solid rgba(74, 158, 255, 0.3);
+    border-radius: 8px;
+    backdrop-filter: blur(5px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    animation: companionSlideIn 0.5s ease-out;
+    position: relative;
+}
+
+.journal-companion-note::before {
+    content: "📝";
+    position: absolute;
+    top: 0.7rem;
+    left: 0.7rem;
+    font-size: 0.8rem;
+    opacity: 0.6;
+}
+
+.companion-message-text {
+    font-size: 0.85rem;
+    color: #d0d0d0;
+    line-height: 1.4;
+    margin: 0;
+    padding-left: 1.8rem;
+}
+
+@keyframes companionSlideIn {
+    from {
+        opacity: 0;
+        transform: translateX(-10px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0) scale(1);
+    }
+}

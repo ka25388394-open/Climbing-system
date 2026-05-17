@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-Content \"C:\\\\Users\\\\USER\\\\Documents\\\\Codex\\\\2026-05-13\\\\excel-excel-1-hang-system-lock\\\\Climbing_System\\\\Climbing_Training_App\\\\app.js\" | Select-Object -Last 50 | ForEach-Object -Begin {$i=1} -Process {\"$\\(\\(Get-Content \"C:\\\\Users\\\\USER\\\\Documents\\\\Codex\\\\2026-05-13\\\\excel-excel-1-hang-system-lock\\\\Climbing_System\\\\Climbing_Training_App\\\\app.js\"\\).Length - 50 + $i\\):`t$_\"; $i++})",
+      "PowerShell(node -c \"C:\\\\Users\\\\USER\\\\Documents\\\\Codex\\\\2026-05-13\\\\excel-excel-1-hang-system-lock\\\\Climbing_System\\\\Climbing_Training_App\\\\app.js\")",
+      "PowerShell(node -c app.js)",
+      "PowerShell(Get-Command *)",
+      "Bash(node *)",
+      "Bash(git init *)",
+      "Bash(git add *)"
+    ]
+  }
+}
