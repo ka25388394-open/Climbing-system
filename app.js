@@ -137,6 +137,7 @@ class ClimbingTrainingJournal {
         this.trainingTemplates = this.initializeTemplates();
         this.program8Week = this.initialize8WeekProgram();
         this.programsByType = this.initializeProgramsByType();
+        this.editingEntryTimestamp = null; // v0.2-E-1: 編輯模式狀態
         this.loadFromStorage();
         this.initializeEventListeners();
         this.renderEntries();
@@ -155,6 +156,23 @@ class ClimbingTrainingJournal {
             currentUser: this.currentUser,
             messageIconDisplay: document.getElementById('messageIcon')?.style.display
         });
+
+        // v0.2-DB-3: 掛載資料品質檢查工具
+        window.debugDataQuality = () => this.generateDataQualityReport();
+
+        // v0.2-DB-5: 掛載安全資料修復工具 (添加方法存在檢查)
+        if (typeof this.repairLocalDataQuality === 'function') {
+            window.repairLocalDataQuality = () => this.repairLocalDataQuality();
+        } else {
+            console.warn('repairLocalDataQuality 方法未找到，稍後重新綁定...');
+            // 延遲綁定以防時序問題
+            setTimeout(() => {
+                if (typeof this.repairLocalDataQuality === 'function') {
+                    window.repairLocalDataQuality = () => this.repairLocalDataQuality();
+                    console.log('✅ window.repairLocalDataQuality 已成功綁定');
+                }
+            }, 100);
+        }
     }
 
     // 取得 Firebase 用戶ID
@@ -375,9 +393,30 @@ class ClimbingTrainingJournal {
             const storage = this.getStorage();
             const stored = storage.getItem(key);
             this.entries = JSON.parse(stored || '[]');
+
+            // v0.2-E-0: 檢查並補強缺失的 timestamp
+            this.ensureTimestampSafety();
         } catch (error) {
             console.error('載入資料時發生錯誤:', error);
             this.entries = [];
+        }
+    }
+
+    // 確保每筆 entry 都有 timestamp，僅補強缺失項目
+    ensureTimestampSafety() {
+        let needsSave = false;
+
+        this.entries.forEach((entry, index) => {
+            if (!entry.timestamp) {
+                // 為舊 entry 補上 legacy timestamp
+                entry.timestamp = `legacy_${entry.date || 'unknown'}_${index}_${Date.now()}`;
+                needsSave = true;
+            }
+        });
+
+        // 如果有補強，需要儲存
+        if (needsSave) {
+            this.saveToStorage();
         }
     }
 
@@ -471,14 +510,10 @@ class ClimbingTrainingJournal {
         return program;
     }
 
-    // 建立正規化的預設Programs（來源：8週課表 + 訓練模板）
+    // 建立正規化的預設Programs（補缺邏輯：保留自訂，補回缺少的預設）
     initializeProgramsByType() {
-        // 先嘗試從 localStorage 載入
+        // 載入目前已存在的 Programs
         const savedPrograms = this.loadPrograms();
-        if (savedPrograms.length > 0) {
-            // 將 programs 轉為舊格式以保持相容性
-            return this.convertProgramsToOldFormat(savedPrograms);
-        }
 
         // 固定的 5 個預設 Programs（基於既有8週課表 + 訓練模板）
         const defaultPrograms = [
@@ -524,25 +559,24 @@ class ClimbingTrainingJournal {
             }
         ];
 
-        // 儲存預設 programs 到 localStorage
-        this.savePrograms(defaultPrograms);
+        // 找出缺少的預設Programs（用 name + type 判斷避免衝突）
+        const missingDefaults = defaultPrograms.filter(defaultProg =>
+            !savedPrograms.some(saved => saved.name === defaultProg.name && saved.type === defaultProg.type)
+        );
+
+        // 合併：保留所有自訂 + 補回缺少的預設
+        const mergedPrograms = [...savedPrograms, ...missingDefaults];
+
+        // 如果有補回預設Programs，儲存更新
+        if (missingDefaults.length > 0) {
+            this.savePrograms(mergedPrograms);
+        }
 
         // 返回舊格式以保持相容性
-        return this.convertProgramsToOldFormat(defaultPrograms);
+        return this.convertProgramsToOldFormat(mergedPrograms);
     }
 
-    // 載入 Programs 從 localStorage
-    loadPrograms() {
-        const stored = localStorage.getItem('climbingPrograms');
-        if (stored) {
-            try {
-                return JSON.parse(stored);
-            } catch (error) {
-                console.error('載入 Programs 時發生錯誤:', error);
-            }
-        }
-        return [];
-    }
+    // 舊版 loadPrograms 已移除 - 統一使用身份分離版本 (line 385-395)
 
     // 儲存 Programs 到 localStorage
     savePrograms(programs) {
@@ -571,11 +605,15 @@ class ClimbingTrainingJournal {
 
         programs.forEach(program => {
             if (result[program.type]) {
+                // v0.2-P-4-4: 保留所有欄位，特別是 archived/archivedAt
                 result[program.type].push({
                     name: program.name,
                     items: program.items,
                     id: program.id, // 保留 id 供查找使用（現在是字串格式）
-                    category: program.category
+                    category: program.category,
+                    createdAt: program.createdAt,
+                    archived: program.archived,
+                    archivedAt: program.archivedAt
                 });
             }
         });
@@ -633,6 +671,44 @@ class ClimbingTrainingJournal {
         return allPrograms.filter(program => program.id && program.id.startsWith('program_custom_'));
     }
 
+    // v0.2-P-4-3: 封存已使用的 Program
+    archiveProgram(programId) {
+        try {
+            const programs = this.loadPrograms();
+            const program = programs.find(p => p.id === programId);
+
+            if (!program) {
+                alert('找不到指定的 Program');
+                return false;
+            }
+
+            // 設定封存狀態
+            program.archived = true;
+            program.archivedAt = new Date().toISOString();
+
+            // 儲存更新
+            this.savePrograms(programs);
+
+            // 更新相關 UI
+            this.programsByType = this.initializeProgramsByType();
+            this.updateCustomProgramsList();
+
+            // 更新目前的 Program 選項 (如果有選中的訓練類型)
+            const selectedTrainingType = document.querySelector('input[name="trainingType"]:checked')?.value;
+            if (selectedTrainingType) {
+                this.updateProgramOptions(selectedTrainingType);
+            }
+
+            this.showToast('Program 已封存，未來新增紀錄時不再顯示');
+            return true;
+
+        } catch (error) {
+            console.error('封存 Program 失敗:', error);
+            alert('封存 Program 時發生錯誤，請重試');
+            return false;
+        }
+    }
+
     // 刪除自訂 Program
     deleteProgram(programId) {
         // 檢查 1: 是否為自訂 Program
@@ -641,10 +717,27 @@ class ClimbingTrainingJournal {
             return false;
         }
 
-        // 檢查 2: 是否已被使用
+        // 檢查 2: 已使用 Program 分流處理
         if (this.isProgramInUse(programId)) {
-            alert('此 Program 已有紀錄，暫不建議刪除。');
-            return false;
+            // v0.2-P-4-3: 已使用 Program 改為封存策略
+            const programs = this.loadPrograms();
+            const programToArchive = programs.find(p => p.id === programId);
+
+            if (!programToArchive) {
+                alert('找不到指定的 Program');
+                return false;
+            }
+
+            const confirmed = confirm(
+                `這個 Program 「${programToArchive.name}」已被過去紀錄使用。為了保留歷史資料，不會直接刪除。\n\n要將它封存嗎？\n\n封存後不會出現在新紀錄選單，但過去紀錄仍會保留。`
+            );
+
+            if (!confirmed) {
+                return false;
+            }
+
+            // 執行封存
+            return this.archiveProgram(programId);
         }
 
         // 找到要刪除的 Program 名稱
@@ -1000,10 +1093,14 @@ class ClimbingTrainingJournal {
         });
 
         // 表單提交
-        document.getElementById('trainingForm').addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.handleFormSubmit();
-        });
+        const trainingForm = document.getElementById('trainingForm');
+        if (trainingForm && !trainingForm.dataset.bound) {
+            trainingForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.handleFormSubmit();
+            });
+            trainingForm.dataset.bound = 'true';
+        }
 
         // 取消表單
         document.getElementById('cancelForm').addEventListener('click', () => {
@@ -1230,9 +1327,12 @@ class ClimbingTrainingJournal {
         });
 
         // 今日狀態變化
-        conditionSelect.addEventListener('change', () => {
-            this.updateScheduleDisplay();
-        });
+        if (!conditionSelect.hasAttribute('data-bound')) {
+            conditionSelect.setAttribute('data-bound', 'true');
+            conditionSelect.addEventListener('change', () => {
+                this.updateScheduleDisplay();
+            });
+        }
 
         // 套用課表按鈕
         applyScheduleBtn.addEventListener('click', () => {
@@ -1242,24 +1342,32 @@ class ClimbingTrainingJournal {
 
     // 設定收合功能事件
     setupCollapsibleEvents() {
-        const collapsibleHeaders = document.querySelectorAll('.collapsible-header');
+        const headers = document.querySelectorAll('.collapsible-header');
 
-        collapsibleHeaders.forEach(header => {
+        headers.forEach(header => {
+            if (header.dataset.bound === 'true') return;
+
             header.addEventListener('click', () => {
-                const section = header.parentElement;
-                const content = section.querySelector('.collapsible-content');
+                const section = header.closest('.form-section');
+                const content = section ? section.querySelector('.collapsible-content') : null;
                 const toggleHint = header.querySelector('.toggle-hint');
 
-                if (content.style.display === 'none') {
-                    content.style.display = 'block';
-                    toggleHint.textContent = '(點擊收起)';
-                    section.style.opacity = '1';
-                } else {
-                    content.style.display = 'none';
-                    toggleHint.textContent = '(點擊展開)';
-                    section.style.opacity = '0.7';
+                if (!content) return;
+
+                const isHidden = content.style.display === 'none' || content.style.display === '';
+                content.style.display = isHidden ? 'block' : 'none';
+
+                if (toggleHint) {
+                    toggleHint.textContent = isHidden ? '(點擊收起)' : '(點擊展開)';
+                }
+
+                if (section) {
+                    section.classList.toggle('collapsed', !isHidden);
+                    section.style.opacity = isHidden ? '1' : '0.7';
                 }
             });
+
+            header.dataset.bound = 'true';
         });
     }
 
@@ -1268,15 +1376,19 @@ class ClimbingTrainingJournal {
         // 訓練類型變化監聽
         const trainingTypeRadios = document.querySelectorAll('input[name="trainingType"]');
         trainingTypeRadios.forEach(radio => {
-            radio.addEventListener('change', (e) => {
-                this.updateProgramOptions(e.target.value);
-                this.clearItemStatusList();
-            });
+            if (!radio.hasAttribute('data-bound')) {
+                radio.setAttribute('data-bound', 'true');
+                radio.addEventListener('change', (e) => {
+                    this.updateProgramOptions(e.target.value);
+                    this.clearItemStatusList();
+                });
+            }
         });
 
         // Program選擇變化監聽
         const programSelect = document.getElementById('programSelect');
-        if (programSelect) {
+        if (programSelect && !programSelect.hasAttribute('data-bound')) {
+            programSelect.setAttribute('data-bound', 'true');
             programSelect.addEventListener('change', (e) => {
                 const trainingType = document.querySelector('input[name="trainingType"]:checked')?.value;
                 if (trainingType && e.target.value) {
@@ -1290,11 +1402,12 @@ class ClimbingTrainingJournal {
     setupProgramBuilderEvents() {
         // Program Builder 表單提交
         const programBuilderForm = document.getElementById('programBuilderForm');
-        if (programBuilderForm) {
+        if (programBuilderForm && !programBuilderForm.dataset.bound) {
             programBuilderForm.addEventListener('submit', (e) => {
                 e.preventDefault();
                 this.handleProgramBuilderSubmit();
             });
+            programBuilderForm.dataset.bound = 'true';
         }
 
         // category 選擇變化
@@ -1311,7 +1424,8 @@ class ClimbingTrainingJournal {
 
         // 刪除 Program 事件
         const deleteCustomProgramBtn = document.getElementById('deleteCustomProgramBtn');
-        if (deleteCustomProgramBtn) {
+        if (deleteCustomProgramBtn && !deleteCustomProgramBtn.hasAttribute('data-bound')) {
+            deleteCustomProgramBtn.setAttribute('data-bound', 'true');
             deleteCustomProgramBtn.addEventListener('click', () => {
                 this.handleDeleteProgram();
             });
@@ -1452,13 +1566,74 @@ class ClimbingTrainingJournal {
         const deleteProgramSelect = document.getElementById('deleteCustomProgramSelect');
         if (!deleteProgramSelect) return;
 
-        const selectedProgramId = deleteProgramSelect.value;
-        if (!selectedProgramId) {
-            alert('請選擇要刪除的 Program');
+        // 多重取值方式確保穩健性
+        const selectedOption = deleteProgramSelect.selectedOptions[0];
+        const selectedIndex = deleteProgramSelect.selectedIndex;
+        const selectedValue = selectedOption ? selectedOption.value : '';
+        const selectedText = selectedOption ? selectedOption.textContent.trim() : '';
+        const selectedProgramName = selectedOption ? selectedOption.dataset.programName : '';
+
+        // 情境 A：真的沒有選 Program（選到 placeholder）
+        const isPlaceholder =
+            !selectedOption ||
+            selectedIndex <= 0 ||
+            selectedText.includes('選擇要刪除');
+
+        if (isPlaceholder) {
+            alert('請先選擇要刪除的 Program。');
             return;
         }
 
-        const success = this.deleteProgram(selectedProgramId);
+        // 取得 option 的詳細資訊
+        const programName = selectedOption.dataset.programName;
+        const programType = selectedOption.dataset.programType;
+        const programId = selectedOption.dataset.programId;
+        const optionText = selectedOption.textContent.trim();
+
+        // 根據多種方式查找 program（支援 fallback）
+        const customPrograms = this.loadCustomPrograms();
+        let targetProgram = null;
+
+        // 方法 1：用 program.id 查找
+        if (programId) {
+            targetProgram = customPrograms.find(p => p.id === programId);
+        }
+
+        // 方法 2：用 selectedValue 查找（id 或 name__type）
+        if (!targetProgram && selectedValue) {
+            targetProgram = customPrograms.find(p => p.id === selectedValue) ||
+                           customPrograms.find(p => `${p.name}__${p.type}` === selectedValue);
+        }
+
+        // 方法 3：用 data-program-name 查找
+        if (!targetProgram && selectedProgramName) {
+            targetProgram = customPrograms.find(p => p.name === selectedProgramName);
+        }
+
+        // 方法 4：用 option 文字內容查找（去除 "已使用" 標記）
+        if (!targetProgram && selectedText) {
+            const cleanSelectedText = selectedText.replace(' (已使用)', '').trim();
+            targetProgram = customPrograms.find(p => p.name === cleanSelectedText);
+        }
+
+        if (!targetProgram) {
+            alert('找不到要刪除的 Program，請重新選擇。');
+            return;
+        }
+
+        // 情境 B：選到已封存的 Program
+        if (targetProgram.archived === true) {
+            alert(`這個 Program 已經封存，無法再次操作。`);
+            return;
+        }
+
+        // 情境 C：選到未使用的自訂 Program (可真刪除)
+        if (!confirm(`確定要刪除「${targetProgram.name}」嗎？\n\n刪除後，這個 Program 會從清單中消失。\n已經建立的 Daily Journal 紀錄不會被刪除。`)) {
+            return; // 使用者按取消，不刪除
+        }
+
+        // 使用者按確定，執行刪除流程
+        const success = this.deleteProgram(targetProgram.id);
         if (success) {
             // 刪除成功，重新載入自訂 Programs 清單
             this.updateCustomProgramsList();
@@ -1485,20 +1660,49 @@ class ClimbingTrainingJournal {
         } else {
             customPrograms.forEach(program => {
                 const isInUse = this.isProgramInUse(program.id);
-                const optionText = isInUse ? `${program.name} (已使用)` : program.name;
-                const disabled = isInUse ? 'disabled' : '';
+                const isArchived = program.archived === true;
 
-                deleteProgramSelect.innerHTML += `<option value="${program.id}" ${disabled}>${optionText}</option>`;
+                // v0.2-P-4-3: 封存狀態顯示邏輯
+                let optionText, disabled;
+                if (isArchived) {
+                    optionText = `${program.name} (已封存)`;
+                    disabled = 'disabled';
+                } else if (isInUse) {
+                    optionText = `${program.name} (可封存)`;
+                    disabled = '';
+                } else {
+                    optionText = program.name;
+                    disabled = '';
+                }
+
+                // 確保每個 option 都有可用 value（優先使用 id，fallback 使用 name__type）
+                const optionValue = program.id || `${program.name}__${program.type}`;
+
+                deleteProgramSelect.innerHTML += `<option value="${optionValue}"
+                    data-program-name="${program.name}"
+                    data-program-type="${program.type}"
+                    data-program-id="${program.id || ''}"
+                    ${disabled}>${optionText}</option>`;
             });
         }
     }
 
     // 更新Program選項
-    updateProgramOptions(trainingType) {
+    updateProgramOptions(trainingType, options = {}) {
         const programSelect = document.getElementById('programSelect');
         if (!programSelect || !this.programsByType[trainingType]) return;
 
-        const programs = this.programsByType[trainingType];
+        const { includeArchived = false } = options;
+        let programs = this.programsByType[trainingType];
+
+        // v0.2-P-4-2: 相容層過濾 archived Program (預備未來封存功能)
+        if (!includeArchived) {
+            programs = programs.filter(program =>
+                // 如果沒有 archived 欄位，視為 active (向下相容)
+                program.archived !== true
+            );
+        }
+
         programSelect.innerHTML = '<option value="">請選擇Program</option>' +
             programs.map(program =>
                 `<option value="${program.name}">${program.name}</option>`
@@ -1512,10 +1716,29 @@ class ClimbingTrainingJournal {
     }
 
     // 生成Program item狀態選擇
-    generateItemStatusList(programName, trainingType) {
-        const programs = this.programsByType[trainingType];
+    generateItemStatusList(programName, trainingType, options = {}) {
+        const { includeArchived = false } = options;
+        let programs = this.programsByType[trainingType];
+        if (!programs) {
+            console.warn(`找不到訓練類型 '${trainingType}' 的 Programs`);
+            this.clearItemStatusList();
+            return;
+        }
+
+        // v0.2-P-4-2: 相容層過濾 archived Program (預備未來封存功能)
+        if (!includeArchived) {
+            programs = programs.filter(program =>
+                // 如果沒有 archived 欄位，視為 active (向下相容)
+                program.archived !== true
+            );
+        }
+
         const program = programs.find(p => p.name === programName);
-        if (!program) return;
+        if (!program) {
+            console.warn(`找不到 Program '${programName}' (includeArchived: ${includeArchived})`);
+            this.clearItemStatusList();
+            return;
+        }
 
         // 生成每個item的狀態選擇 (簡化為三個狀態)
         const itemsHTML = program.items.map(item => `
@@ -1818,43 +2041,153 @@ class ClimbingTrainingJournal {
 
     // 隱藏表單
     hideForm() {
+        // v0.2-E-1: 清除編輯模式，防止取消編輯後誤覆蓋舊紀錄
+        this.editingEntryTimestamp = null;
+
         document.getElementById('entryForm').style.display = 'none';
         document.body.style.overflow = 'auto';
+    }
+
+    // 檢查 entry 是否有實際內容（只有真正用戶輸入或 movement 資料才算 meaningful）
+    hasMeaningfulEntryData(entry) {
+        if (!entry) return false;
+
+        // 判斷狀態值是否為有意義的（非預設值）
+        const isMeaningfulState = (value) => {
+            if (value === undefined || value === null) return false;
+            const normalized = String(value).trim().toLowerCase();
+            if (!normalized) return false;
+
+            const emptyLikeValues = [
+                'normal',
+                '一般',
+                '普通',
+                '正常',
+                '一般狀態',
+                'good',
+                'ok',
+                'fine',
+                '好',
+                '良好',
+                'default',
+                'none',
+                '未填',
+                '請選擇',
+                '選擇',
+                '0',
+                '1',
+                '5',
+                '7'
+            ];
+
+            return !emptyLikeValues.includes(normalized);
+        };
+
+        const hasTextData =
+            !!(entry.movementNotes && entry.movementNotes.trim()) ||
+            !!(entry.notes && entry.notes.trim()) ||
+            !!(entry.mainTraining && entry.mainTraining.trim()) ||
+            !!(entry.nextDayFeeling && entry.nextDayFeeling.trim());
+
+        // 收集 meaningful 的 itemStates
+        const meaningfulItemStates = {};
+        if (entry.itemStates) {
+            Object.entries(entry.itemStates).forEach(([key, value]) => {
+                if (isMeaningfulState(value)) {
+                    meaningfulItemStates[key] = value;
+                }
+            });
+        }
+
+        const hasItemStates =
+            entry.itemStates &&
+            Object.values(entry.itemStates).some(state =>
+                isMeaningfulState(state)
+            );
+
+        // 收集 meaningful 的 legacy body data
+        const meaningfulLegacyBodyData = {};
+        if (isMeaningfulState(entry.coreState)) meaningfulLegacyBodyData.coreState = entry.coreState;
+        if (isMeaningfulState(entry.legState)) meaningfulLegacyBodyData.legState = entry.legState;
+        if (isMeaningfulState(entry.shoulderState)) meaningfulLegacyBodyData.shoulderState = entry.shoulderState;
+
+        const hasLegacyBodyData =
+            isMeaningfulState(entry.coreState) ||
+            isMeaningfulState(entry.legState) ||
+            isMeaningfulState(entry.shoulderState);
+
+        const hasExerciseData =
+            Array.isArray(entry.exercises) && entry.exercises.length > 0;
+
+        const result = hasTextData || hasItemStates || hasLegacyBodyData || hasExerciseData;
+
+        // 只有當結果是 meaningful (true) 時才輸出詳細 debug 資訊
+        if (result) {
+            console.log('[Meaningful Entry Debug JSON]', JSON.stringify({
+                date: entry.date,
+                entryBasicInfo: {
+                    movementNotes: entry.movementNotes || '',
+                    notes: entry.notes || '',
+                    mainTraining: entry.mainTraining || '',
+                    nextDayFeeling: entry.nextDayFeeling || '',
+                    exercises: entry.exercises || []
+                },
+                judgmentResults: {
+                    hasTextData,
+                    hasItemStates,
+                    hasLegacyBodyData,
+                    hasExerciseData,
+                    finalResult: result
+                },
+                meaningfulData: {
+                    meaningfulItemStates,
+                    meaningfulLegacyBodyData
+                }
+            }, null, 2));
+        }
+
+        return result;
     }
 
     // 處理表單提交
     handleFormSubmit() {
         const formData = this.getFormData();
 
-        // 檢查是否已有同日期的紀錄
-        console.log('[Duplicate Check]', {
-            currentUser: this.currentUser,
-            formDate: formData.date,
-            entriesLength: this.entries.length,
-            entryDates: this.entries.map(e => e.date),
-            entries: this.entries
-        });
-        const existingIndex = this.entries.findIndex(entry => entry.date === formData.date);
+        // 檢查是否為編輯模式
+        if (this.editingEntryTimestamp) {
+            // 編輯模式：替換現有 entry
+            const editIndex = this.entries.findIndex(entry => entry.timestamp === this.editingEntryTimestamp);
+            if (editIndex !== -1) {
+                // 保留原 timestamp
+                formData.timestamp = this.editingEntryTimestamp;
+                // 替換 entry
+                this.entries[editIndex] = formData;
 
-        if (existingIndex !== -1) {
-            if (confirm('該日期已有紀錄，是否要覆蓋？')) {
-                this.entries[existingIndex] = formData;
+                // 清除編輯模式
+                this.editingEntryTimestamp = null;
+
+                this.saveToStorage();
+                this.renderEntries();
+                this.hideForm();
+                this.showToast('紀錄已更新！');
             } else {
+                alert('找不到要編輯的紀錄，請重新整理頁面。');
                 return;
             }
         } else {
+            // 新增模式：v0.2-D 允許同日期多筆紀錄
             this.entries.push(formData);
+
+            // 按日期排序 (最新的在前面)
+            this.entries.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+            this.saveToStorage();
+            this.renderEntries();
+            this.hideForm();
+
+            // 顯示成功訊息
+            this.showToast('紀錄已儲存！');
         }
-
-        // 按日期排序 (最新的在前面)
-        this.entries.sort((a, b) => new Date(b.date) - new Date(a.date));
-
-        this.saveToStorage();
-        this.renderEntries();
-        this.hideForm();
-
-        // 顯示成功訊息
-        this.showToast('紀錄已儲存！');
 
         // 顯示陪伴訊息
         this.showJournalCompanionMessage(formData.todayCondition, this.entries.length);
@@ -1953,6 +2286,25 @@ class ClimbingTrainingJournal {
             this.createEntryCard(entry, index)
         ).join('');
 
+        // 添加整張卡片點擊編輯事件監聽器
+        container.querySelectorAll('.entry-card').forEach(card => {
+            card.addEventListener('click', (e) => {
+                const timestamp = card.dataset.timestamp;
+                if (timestamp) {
+                    this.editEntry(timestamp);
+                }
+            });
+        });
+
+        // 添加編輯事件監聽器
+        container.querySelectorAll('.edit-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const timestamp = btn.dataset.timestamp;
+                this.editEntry(timestamp);
+            });
+        });
+
         // 添加刪除事件監聽器
         container.querySelectorAll('.delete-btn').forEach((btn, index) => {
             btn.addEventListener('click', (e) => {
@@ -1967,7 +2319,8 @@ class ClimbingTrainingJournal {
         const formattedDate = this.formatDate(entry.date);
 
         return `
-            <div class="entry-card">
+            <div class="entry-card" data-timestamp="${entry.timestamp || ''}" style="cursor: pointer;">
+                <button class="edit-btn" title="編輯此紀錄" data-timestamp="${entry.timestamp || ''}">✏️</button>
                 <button class="delete-btn" title="刪除此紀錄">🗑️</button>
                 <div class="entry-header">
                     <div class="entry-date">${this.currentUser !== 'guest'
@@ -1976,28 +2329,28 @@ class ClimbingTrainingJournal {
                     }</div>
                 </div>
 
-                ${entry.todayCondition ? `
+                ${entry.todayCondition && false ? `
                 <div class="entry-section">
                     <h4>⚡ 今日狀態</h4>
                     <p>${this.getConditionDisplayText(entry.todayCondition)}</p>
                 </div>
                 ` : ''}
 
-                ${entry.trainingType ? `
+                ${entry.trainingType && false ? `
                 <div class="entry-section">
                     <h4>🎯 訓練類型</h4>
                     <p>${entry.trainingType === '攀岩' ? '🧗 攀岩' : '💪 功能訓練'}</p>
                 </div>
                 ` : ''}
 
-                ${entry.program ? `
+                ${entry.program && false ? `
                 <div class="entry-section">
                     <h4>📋 Program</h4>
                     <p>${entry.program}</p>
                 </div>
                 ` : ''}
 
-                ${entry.completion ? `
+                ${entry.completion && false ? `
                 <div class="entry-section">
                     <h4>✅ 完成度</h4>
                     <p>${this.getCompletionDisplayText(entry.completion)}</p>
@@ -2013,8 +2366,8 @@ class ClimbingTrainingJournal {
                 </div>
                 ` : ''}
 
-                <!-- 保留舊資料顯示以保持相容性 -->
-                ${entry.mainTraining && !entry.trainingType ? `
+                <!-- 保留舊資料顯示以保持相容性 - v0.2-D 隱藏但保留代碼 -->
+                ${entry.mainTraining && !entry.trainingType && false ? `
                 <div class="entry-section">
                     <h4>🎯 今日主訓練</h4>
                     <p>${entry.mainTraining}</p>
@@ -2023,7 +2376,7 @@ class ClimbingTrainingJournal {
 
                 ${(() => {
                     const hasLegacyBodyState = entry.coreState || entry.legState || entry.shoulderState;
-                    return hasLegacyBodyState ? `
+                    return hasLegacyBodyState && false ? `
                 <div class="entry-section">
                     <h4>🧠 今日體感</h4>
                     <p>🔵 核心傳導: <span class="${this.getStatusClass(entry.coreState)}">${entry.coreState || '未填'}</span></p>
@@ -2034,7 +2387,7 @@ class ClimbingTrainingJournal {
                 ` : '';
                 })()}
 
-                ${entry.exercises ? `
+                ${entry.exercises && false ? `
                 <div class="entry-section">
                     <h4>💪 訓練內容</h4>
                     <p>${this.formatText(entry.exercises)}</p>
@@ -2043,14 +2396,14 @@ class ClimbingTrainingJournal {
                 </div>
                 ` : ''}
 
-                ${entry.nextDayFeeling ? `
+                ${entry.nextDayFeeling && false ? `
                 <div class="entry-section">
                     <h4>🌙 隔天體感</h4>
                     <p>${this.formatText(entry.nextDayFeeling)}</p>
                 </div>
                 ` : ''}
 
-                ${entry.notes ? `
+                ${entry.notes && false ? `
                 <div class="entry-section">
                     <h4>📝 備註</h4>
                     <p>${this.formatText(entry.notes)}</p>
@@ -2094,6 +2447,72 @@ class ClimbingTrainingJournal {
     }
 
     // 刪除紀錄
+    // 編輯 Entry
+    editEntry(timestamp) {
+        if (!timestamp) {
+            alert('此紀錄缺少時間戳記，請重新整理頁面後再試。');
+            return;
+        }
+
+        const entry = this.entries.find(e => e.timestamp === timestamp);
+        if (!entry) {
+            alert('找不到要編輯的紀錄，請重新整理頁面。');
+            return;
+        }
+
+        // 設定編輯模式
+        this.editingEntryTimestamp = timestamp;
+
+        // 填入表單資料
+        this.populateEntryForm(entry);
+
+        // 顯示表單（不重置）
+        document.getElementById('entryForm').style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+    }
+
+    // 將 Entry 資料填入表單
+    populateEntryForm(entry) {
+        // 基本欄位
+        document.getElementById('date').value = entry.date || '';
+        document.getElementById('todayCondition').value = entry.todayCondition || '';
+
+        // 訓練類型
+        const trainingTypeRadio = document.querySelector(`input[name="trainingType"][value="${entry.trainingType}"]`);
+        if (trainingTypeRadio) {
+            trainingTypeRadio.checked = true;
+            // v0.2-P-4-2: 編輯模式包含 archived Program (確保舊 Entry 可編輯)
+            this.updateProgramOptions(entry.trainingType, { includeArchived: true });
+        }
+
+        // Program 選擇
+        setTimeout(() => {
+            const programSelect = document.getElementById('programSelect');
+            if (programSelect && entry.program) {
+                programSelect.value = entry.program;
+                // v0.2-P-4-2: 編輯模式包含 archived Program (確保 item 狀態可載入)
+                this.generateItemStatusList(entry.program, entry.trainingType, { includeArchived: true });
+
+                // 填入 item 狀態
+                setTimeout(() => {
+                    if (entry.itemStates) {
+                        Object.entries(entry.itemStates).forEach(([item, status]) => {
+                            const radio = document.querySelector(`input[name="item-${item}"][value="${status}"]`);
+                            if (radio) radio.checked = true;
+                        });
+                    }
+                }, 100);
+            }
+        }, 100);
+
+        // 完成度
+        const completionRadio = document.querySelector(`input[name="completion"][value="${entry.completion}"]`);
+        if (completionRadio) completionRadio.checked = true;
+
+        // movement 備註
+        document.getElementById('movementNotes').value = entry.movementNotes || '';
+    }
+
     deleteEntry(index) {
         if (confirm('確定要刪除這筆紀錄嗎？')) {
             this.entries.splice(index, 1);
@@ -2794,6 +3213,498 @@ class ClimbingTrainingJournal {
                 companionNote.style.display = 'none';
             }, 4000);
         }
+    }
+
+    // v0.2-DB-3: 資料品質檢查工具 (只讀不寫)
+    generateDataQualityReport() {
+        console.log('🔍 開始資料品質檢查...');
+
+        const report = {
+            checkedAt: new Date().toISOString(),
+            currentUser: this.currentUser || 'null',
+            entries: this.checkEntryQuality(),
+            programs: this.checkProgramQuality(),
+            messages: this.checkMessageQuality(),
+            storage: this.checkStorageKeys(),
+            riskSummary: { high: 0, medium: 0, low: 0 }
+        };
+
+        // 計算風險統計
+        const allIssues = [
+            ...report.entries.issues,
+            ...report.programs.issues,
+            ...report.messages.issues
+        ];
+
+        allIssues.forEach(issue => {
+            if (issue.risk === 'high') report.riskSummary.high++;
+            else if (issue.risk === 'medium') report.riskSummary.medium++;
+            else report.riskSummary.low++;
+        });
+
+        // Console 輸出
+        console.log('📊 資料品質檢查報告：');
+        console.table({
+            'Entries 總數': report.entries.total,
+            'Programs 總數': report.programs.total,
+            'Messages 總數': report.messages.total,
+            '高風險問題': report.riskSummary.high,
+            '中風險問題': report.riskSummary.medium,
+            '低風險問題': report.riskSummary.low
+        });
+
+        if (allIssues.length > 0) {
+            console.log('⚠️ 發現的問題：');
+            console.table(allIssues);
+        } else {
+            console.log('✅ 資料品質良好，無發現問題');
+        }
+
+        console.log('📋 完整報告：', report);
+        return report;
+    }
+
+    // Entry 資料品質檢查
+    checkEntryQuality() {
+        const issues = [];
+        let stats = {
+            total: this.entries.length,
+            missingTimestamp: 0,
+            missingDate: 0,
+            missingTodayCondition: 0,
+            missingTrainingType: 0,
+            missingProgramId: 0,
+            missingCompletion: 0,
+            invalidItemStates: 0,
+            invalidMovementNotes: 0,
+            inconsistentProgramName: 0,
+            missingProgramCategory: 0,
+            inconsistentLegacyItems: 0,
+            issues: issues
+        };
+
+        this.entries.forEach((entry, index) => {
+            // 必要欄位檢查
+            if (!entry.timestamp) {
+                stats.missingTimestamp++;
+                issues.push({
+                    type: 'Entry',
+                    index: index,
+                    issue: '缺少 timestamp',
+                    risk: 'high'
+                });
+            }
+
+            if (!entry.date) {
+                stats.missingDate++;
+                issues.push({
+                    type: 'Entry',
+                    index: index,
+                    issue: '缺少 date',
+                    risk: 'high'
+                });
+            }
+
+            if (!entry.todayCondition) {
+                stats.missingTodayCondition++;
+                issues.push({
+                    type: 'Entry',
+                    index: index,
+                    issue: '缺少 todayCondition',
+                    risk: 'medium'
+                });
+            }
+
+            if (!entry.trainingType) {
+                stats.missingTrainingType++;
+                issues.push({
+                    type: 'Entry',
+                    index: index,
+                    issue: '缺少 trainingType',
+                    risk: 'medium'
+                });
+            }
+
+            if (!entry.programId) {
+                stats.missingProgramId++;
+                issues.push({
+                    type: 'Entry',
+                    index: index,
+                    issue: '缺少 programId',
+                    risk: 'high'
+                });
+            }
+
+            if (!entry.completion) {
+                stats.missingCompletion++;
+                issues.push({
+                    type: 'Entry',
+                    index: index,
+                    issue: '缺少 completion',
+                    risk: 'medium'
+                });
+            }
+
+            // itemStates 格式檢查
+            if (entry.itemStates !== undefined && typeof entry.itemStates !== 'object') {
+                stats.invalidItemStates++;
+                issues.push({
+                    type: 'Entry',
+                    index: index,
+                    issue: 'itemStates 不是 object',
+                    risk: 'medium'
+                });
+            }
+
+            // movementNotes 格式檢查
+            if (entry.movementNotes !== undefined && typeof entry.movementNotes !== 'string') {
+                stats.invalidMovementNotes++;
+                issues.push({
+                    type: 'Entry',
+                    index: index,
+                    issue: 'movementNotes 不是 string',
+                    risk: 'low'
+                });
+            }
+
+            // program vs programName 一致性檢查
+            if (entry.program && entry.programName && entry.program !== entry.programName) {
+                stats.inconsistentProgramName++;
+                issues.push({
+                    type: 'Entry',
+                    index: index,
+                    issue: 'program 與 programName 不一致',
+                    risk: 'medium'
+                });
+            }
+
+            // programCategory 檢查
+            if (!entry.programCategory) {
+                stats.missingProgramCategory++;
+                issues.push({
+                    type: 'Entry',
+                    index: index,
+                    issue: '缺少 programCategory',
+                    risk: 'low'
+                });
+            }
+
+            // missedItems/specialItems 與 itemStates 一致性檢查 (與 repairLocalDataQuality 規則一致)
+            if (entry.itemStates && typeof entry.itemStates === 'object') {
+                // 使用與修復器相同的轉換規則
+                const expectedMissed = Object.entries(entry.itemStates)
+                    .filter(([_, status]) => status === 'missed' || status === 'weak')
+                    .map(([item, _]) => item);
+                const expectedSpecial = Object.entries(entry.itemStates)
+                    .filter(([_, status]) => status === 'special' || status === 'strong')
+                    .map(([item, _]) => item);
+
+                // 確保實際值是陣列，undefined 視為空陣列
+                const actualMissed = Array.isArray(entry.missedItems) ? entry.missedItems : [];
+                const actualSpecial = Array.isArray(entry.specialItems) ? entry.specialItems : [];
+
+                // 忽略順序比較
+                const missedMatch = JSON.stringify(expectedMissed.sort()) === JSON.stringify(actualMissed.sort());
+                const specialMatch = JSON.stringify(expectedSpecial.sort()) === JSON.stringify(actualSpecial.sort());
+
+                if (!missedMatch || !specialMatch) {
+                    stats.inconsistentLegacyItems++;
+                    issues.push({
+                        type: 'Entry',
+                        index: index,
+                        issue: 'itemStates 與 missedItems/specialItems 不一致',
+                        risk: 'medium'
+                    });
+                }
+            }
+        });
+
+        return stats;
+    }
+
+    // Program 資料品質檢查
+    checkProgramQuality() {
+        const programs = this.loadPrograms();
+        const issues = [];
+        let stats = {
+            total: programs.length,
+            missingId: 0,
+            missingName: 0,
+            missingType: 0,
+            invalidItems: 0,
+            missingCreatedAt: 0,
+            duplicateNameType: 0,
+            invalidCustomId: 0,
+            issues: issues
+        };
+
+        const nameTypeMap = new Map();
+
+        programs.forEach((program, index) => {
+            // 必要欄位檢查
+            if (!program.id) {
+                stats.missingId++;
+                issues.push({
+                    type: 'Program',
+                    index: index,
+                    issue: '缺少 id',
+                    risk: 'high'
+                });
+            }
+
+            if (!program.name) {
+                stats.missingName++;
+                issues.push({
+                    type: 'Program',
+                    index: index,
+                    issue: '缺少 name',
+                    risk: 'high'
+                });
+            }
+
+            if (!program.type) {
+                stats.missingType++;
+                issues.push({
+                    type: 'Program',
+                    index: index,
+                    issue: '缺少 type',
+                    risk: 'medium'
+                });
+            }
+
+            // items 格式檢查
+            if (!Array.isArray(program.items)) {
+                stats.invalidItems++;
+                issues.push({
+                    type: 'Program',
+                    index: index,
+                    issue: 'items 不是 array',
+                    risk: 'medium'
+                });
+            }
+
+            // createdAt 檢查
+            if (!program.createdAt) {
+                stats.missingCreatedAt++;
+                issues.push({
+                    type: 'Program',
+                    index: index,
+                    issue: '缺少 createdAt',
+                    risk: 'low'
+                });
+            }
+
+            // name + type 重複檢查
+            if (program.name && program.type) {
+                const key = `${program.name}__${program.type}`;
+                if (nameTypeMap.has(key)) {
+                    stats.duplicateNameType++;
+                    issues.push({
+                        type: 'Program',
+                        index: index,
+                        issue: `name+type 重複: ${key}`,
+                        risk: 'medium'
+                    });
+                } else {
+                    nameTypeMap.set(key, true);
+                }
+            }
+
+            // 自訂 Program ID 格式檢查
+            if (program.id && program.id.startsWith('program_custom_')) {
+                const parts = program.id.split('_');
+                // v0.2-DB-6: 修正 validator 邏輯 - 基礎格式 program_custom_name 是合法的
+                if (parts.length < 3 || !parts[2]) {
+                    stats.invalidCustomId++;
+                    issues.push({
+                        type: 'Program',
+                        index: index,
+                        issue: '自訂 Program ID 格式異常',
+                        risk: 'medium'
+                    });
+                }
+            }
+        });
+
+        return stats;
+    }
+
+    // Message 資料品質檢查
+    checkMessageQuality() {
+        const messages = this.loadMessages();
+        const issues = [];
+        let stats = {
+            total: messages.length,
+            missingText: 0,
+            missingType: 0,
+            missingTimestamp: 0,
+            unknownType: 0,
+            byType: { user: 0, auto: 0, developer: 0, official: 0, unknown: 0 },
+            issues: issues
+        };
+
+        const validTypes = ['user', 'auto', 'developer', 'official'];
+
+        messages.forEach((message, index) => {
+            // 必要欄位檢查
+            if (!message.text) {
+                stats.missingText++;
+                issues.push({
+                    type: 'Message',
+                    index: index,
+                    issue: '缺少 text',
+                    risk: 'medium'
+                });
+            }
+
+            if (!message.type) {
+                stats.missingType++;
+                issues.push({
+                    type: 'Message',
+                    index: index,
+                    issue: '缺少 type',
+                    risk: 'medium'
+                });
+            }
+
+            if (!message.timestamp) {
+                stats.missingTimestamp++;
+                issues.push({
+                    type: 'Message',
+                    index: index,
+                    issue: '缺少 timestamp',
+                    risk: 'low'
+                });
+            }
+
+            // type 有效性檢查
+            if (message.type) {
+                if (validTypes.includes(message.type)) {
+                    stats.byType[message.type]++;
+                } else {
+                    stats.unknownType++;
+                    stats.byType.unknown++;
+                    issues.push({
+                        type: 'Message',
+                        index: index,
+                        issue: `不明 type: ${message.type}`,
+                        risk: 'medium'
+                    });
+                }
+            }
+        });
+
+        return stats;
+    }
+
+    // Storage Keys 檢查
+    checkStorageKeys() {
+        const localStorageKeys = [];
+        const sessionStorageKeys = [];
+        const legacyKeysFound = [];
+
+        // 檢查 localStorage
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.includes('climbing')) {
+                localStorageKeys.push(key);
+
+                // 檢查 legacy keys
+                if (key === 'climbingTrainingEntries' || key === 'climbingPrograms') {
+                    legacyKeysFound.push(key);
+                }
+            }
+        }
+
+        // 檢查 sessionStorage
+        for (let i = 0; i < sessionStorage.length; i++) {
+            const key = sessionStorage.key(i);
+            if (key && key.includes('climbing')) {
+                sessionStorageKeys.push(key);
+            }
+        }
+
+        return {
+            localStorageKeys,
+            sessionStorageKeys,
+            legacyKeysFound,
+            currentUserValue: localStorage.getItem('currentUser')
+        };
+    }
+
+    // v0.2-DB-5: 安全本地資料修復 (只修 completion 與 itemStates 相容性)
+    repairLocalDataQuality() {
+        console.log('🔧 開始本地資料品質修復...');
+
+        let repairedCount = 0;
+        let completionFixed = 0;
+        let itemStatesFixed = 0;
+
+        this.entries.forEach((entry, index) => {
+            let entryRepaired = false;
+
+            // 修復 1: completion 缺失
+            if (!entry.completion) {
+                entry.completion = "most"; // 預設為「大部分」
+                completionFixed++;
+                entryRepaired = true;
+                console.log(`✅ Entry ${index}: 補充 completion = "most"`);
+            }
+
+            // 修復 2: itemStates 與 missedItems/specialItems 同步 (以 itemStates 為主)
+            if (entry.itemStates && typeof entry.itemStates === 'object') {
+                const missedItems = [];
+                const specialItems = [];
+
+                // 以 itemStates 為主資料，直接重新生成相容欄位
+                Object.entries(entry.itemStates).forEach(([item, status]) => {
+                    if (status === 'missed' || status === 'weak') missedItems.push(item);
+                    if (status === 'special' || status === 'strong') specialItems.push(item);
+                    // 'normal' 和 'stuck' 不進入 missedItems/specialItems
+                });
+
+                // 直接覆蓋相容欄位，不檢查差異
+                entry.missedItems = missedItems;
+                entry.specialItems = specialItems;
+                itemStatesFixed++;
+                entryRepaired = true;
+                console.log(`✅ Entry ${index}: 重建 itemStates 相容性`);
+                console.log(`   missedItems: ${JSON.stringify(missedItems)}`);
+                console.log(`   specialItems: ${JSON.stringify(specialItems)}`);
+            }
+
+            if (entryRepaired) {
+                repairedCount++;
+            }
+        });
+
+        // 儲存修復結果
+        if (repairedCount > 0) {
+            this.saveToStorage();
+            this.renderEntries();
+
+            // 顯示修復統計
+            console.log('📊 修復統計：');
+            console.table({
+                '修復的 Entry 數量': repairedCount,
+                'Completion 缺失修復': completionFixed,
+                'ItemStates 同步修復': itemStatesFixed
+            });
+
+            this.showToast(`資料品質已整理完成！修復了 ${repairedCount} 筆紀錄`);
+
+            // 建議執行檢查驗證結果
+            console.log('💡 建議執行 window.debugDataQuality() 驗證修復結果');
+        } else {
+            console.log('✅ 資料品質良好，無需修復');
+            this.showToast('資料品質已是最新狀態！');
+        }
+
+        return {
+            repairedEntries: repairedCount,
+            completionFixed: completionFixed,
+            itemStatesFixed: itemStatesFixed
+        };
     }
 }
 

@@ -1008,16 +1008,23 @@ input[type="range"]::-webkit-slider-thumb {
 
 /* === 留言系統樣式 === */
 
-/* 留言 icon */
+/* 留言 icon - 固定定位浮動按鈕 */
 .message-icon {
-    background: rgba(74, 158, 255, 0.1);
-    border: 1px solid rgba(74, 158, 255, 0.3);
-    color: #4a9eff;
-    border-radius: 8px;
-    padding: 0.5rem;
-    margin-left: 0.8rem;
+    position: fixed;
+    bottom: 20px;
+    right: 80px;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: rgba(74, 158, 255, 0.9);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
     cursor: pointer;
-    font-size: 1rem;
+    z-index: 1000;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.25);
     transition: all 0.3s ease;
 }
 

@@ -7,7 +7,16 @@
       "PowerShell(Get-Command *)",
       "Bash(node *)",
       "Bash(git init *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m '🎉 攀岩訓練日記工具 v0.2 - 完整 MVP *)",
+      "Bash(vercel --version)",
+      "Bash(npm install *)",
+      "Bash(vercel --prod)",
+      "Bash(vercel login *)",
+      "Bash(vercel --prod --yes)",
+      "Bash(curl *)",
+      "Bash(git commit -m '🔧 修復 Vercel 靜態文件配置 *)",
+      "Bash(vercel alias *)"
     ]
   }
 }
