@@ -2681,7 +2681,7 @@ class ClimbingTrainingJournal {
             );
         }
 
-        programSelect.innerHTML = '<option value="">請選擇Program</option>' +
+        programSelect.innerHTML = '<option value="">請選擇課表</option>' +
             programs.map(program =>
                 `<option value="${program.name}">${program.name}</option>`
             ).join('');
