@@ -59,19 +59,23 @@ class CloudBackup {
     }
 }
 
+// Supabase Email 映射
+const SUPABASE_EMAIL_MAP = {
+    owner: "xavier@climbing.dev",
+    tester: "alice@climbing.dev"
+};
+
 // 身份配置
 const IDENTITY_CONFIG = {
     owner: {
         name: "Xavier",
         username: "Xavier",
-        password: "19990930",
         displayName: "👨‍💻 開發者",
         firebasePrefix: "demo_owner"
     },
     tester: {
         name: "Alice",
         username: "Alice",
-        password: "20260515",
         displayName: "🧪 測試員",
         firebasePrefix: "demo_tester"
     },
@@ -83,13 +87,15 @@ const IDENTITY_CONFIG = {
     }
 };
 
-// 攀岩訓練日記 - 功能邏輯
+// 攀岩生活日記 - 功能邏輯
 class ClimbingTrainingJournal {
     constructor() {
         // 初始化身份系統
         this.currentUser = null;
         this.showAllMessages = false;
         this.newMessageTimestamps = [];
+        this.isAuthenticating = false; // 防重複登入提交
+        this.currentEntryFlow = null; // 當前入口流程
         this.initializeIdentity();
     }
 
@@ -173,6 +179,16 @@ class ClimbingTrainingJournal {
                 }
             }, 100);
         }
+
+        // v0.2-CLOUD-5-1: Entry Cloud Write 測試函式
+        window.testSyncFirstEntryToCloud = async () => this.testSyncFirstEntryToCloud();
+        window.testConvertFirstEntryToCloudFormat = async () => this.testConvertFirstEntryToCloudFormat();
+
+        // v0.2-CLOUD-6-1: Entry Cloud Read 測試函式
+        window.testLoadCloudEntries = async () => this.testLoadCloudEntries();
+
+        // v0.2-CLOUD-6-2A: Cloud Preview 測試函式
+        window.showCloudPreview = async () => this.showCloudPreview();
     }
 
     // 取得 Firebase 用戶ID
@@ -237,16 +253,29 @@ class ClimbingTrainingJournal {
             });
         });
 
-        // 驗證對話框事件
+        // 驗證對話框事件 (防重複綁定)
         const authSubmit = document.getElementById('authSubmit');
         const authCancel = document.getElementById('authCancel');
+        const authPassword = document.getElementById('authPassword');
 
-        if (authSubmit) {
+        if (authSubmit && !authSubmit.hasAttribute('data-bound')) {
+            authSubmit.setAttribute('data-bound', 'true');
             authSubmit.addEventListener('click', () => this.handleAuthSubmit());
         }
 
-        if (authCancel) {
+        if (authCancel && !authCancel.hasAttribute('data-bound')) {
+            authCancel.setAttribute('data-bound', 'true');
             authCancel.addEventListener('click', () => this.hideAuthDialog());
+        }
+
+        // Enter 鍵提交支援 (防重複綁定)
+        if (authPassword && !authPassword.hasAttribute('data-bound-keydown')) {
+            authPassword.setAttribute('data-bound-keydown', 'true');
+            authPassword.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !this.isAuthenticating) {
+                    this.handleAuthSubmit();
+                }
+            });
         }
 
         // 身份切換事件
@@ -282,15 +311,19 @@ class ClimbingTrainingJournal {
             const modeText = identity === 'owner' ? '開發者' : identity === 'tester' ? '測試員' : '訪客';
             title.textContent = `進入 ${modeText} 模式`;
 
-            // 清空輸入框
-            if (usernameInput) usernameInput.value = '';
+            // 自動填入對應 email (方案 A)
+            if (usernameInput && SUPABASE_EMAIL_MAP[identity]) {
+                usernameInput.value = SUPABASE_EMAIL_MAP[identity];
+            }
+
+            // 清空密碼框
             if (passwordInput) passwordInput.value = '';
 
             dialog.style.display = 'flex';
             dialog.dataset.identity = identity;
 
-            // 聚焦到第一個輸入框
-            if (usernameInput) usernameInput.focus();
+            // 聚焦到密碼輸入框 (email 已自動填入且 readonly)
+            if (passwordInput) passwordInput.focus();
         }
     }
 
@@ -303,46 +336,592 @@ class ClimbingTrainingJournal {
     }
 
     // 處理驗證提交
-    handleAuthSubmit() {
+    async handleAuthSubmit() {
+        // 防重複提交
+        if (this.isAuthenticating) {
+            console.log('正在登入中，忽略重複提交');
+            return;
+        }
+
         const dialog = document.getElementById('authDialog');
         const identity = dialog.dataset.identity;
         const username = document.getElementById('authUsername').value.trim();
         const password = document.getElementById('authPassword').value.trim();
+        const submitBtn = document.getElementById('authSubmit');
 
-        if (this.validateIdentity(identity, username, password)) {
-            this.setCurrentUser(identity);
-            this.hideAuthDialog();
-            this.hideIdentitySelector();
+        try {
+            this.isAuthenticating = true;
 
-            console.log('[BeforeInitializeApp]', {
-                currentUser: this.currentUser,
-                setCurrentUserCompleted: true,
-                aboutToCallInitializeApp: true
-            });
+            // 暫時禁用提交按鈕
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = '登入中...';
+            }
 
-            this.initializeApp();
+            // 使用 Supabase Auth 驗證 owner/tester
+            const authResult = await this.authenticateWithSupabase(identity, password);
 
-            console.log('[AfterInitializeApp]', {
-                currentUser: this.currentUser,
-                initializeAppCompleted: true
-            });
+            if (authResult.success) {
+                this.setCurrentUser(identity);
+                this.hideAuthDialog();
+                this.hideIdentitySelector();
 
-            const config = IDENTITY_CONFIG[identity];
-            const modeText = identity === 'owner' ? '開發者' : identity === 'tester' ? '測試員' : '訪客';
-            this.showToast(`歡迎回來，${modeText}！`);
-        } else {
-            this.showToast('代碼錯誤，請重試');
-            // 清空密碼框
-            document.getElementById('authPassword').value = '';
+                console.log('[BeforeInitializeApp]', {
+                    currentUser: this.currentUser,
+                    setCurrentUserCompleted: true,
+                    aboutToCallInitializeApp: true
+                });
+
+                this.initializeApp();
+
+                console.log('[AfterInitializeApp]', {
+                    currentUser: this.currentUser,
+                    initializeAppCompleted: true
+                });
+
+                const config = IDENTITY_CONFIG[identity];
+                const modeText = identity === 'owner' ? '開發者' : identity === 'tester' ? '測試員' : '訪客';
+                this.showToast(`歡迎回來，${modeText}！`);
+            } else {
+                this.showToast(authResult.message || '登入失敗，請重試');
+                // 清空密碼框
+                document.getElementById('authPassword').value = '';
+            }
+
+        } finally {
+            // 恢復按鈕狀態
+            this.isAuthenticating = false;
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = '進入';
+            }
         }
     }
 
-    // 驗證身份
+    // 驗證身份 (保留，guest 模式使用)
     validateIdentity(identity, username, password) {
         const config = IDENTITY_CONFIG[identity];
         if (!config || config.noAuth) return false;
 
-        return config.username === username && config.password === password;
+        // guest 不使用此函式，owner/tester 現在使用 Supabase Auth
+        return false;
+    }
+
+    // Supabase Auth 驗證 (owner/tester 使用)
+    async authenticateWithSupabase(identity, password) {
+        try {
+            // guest 不走 Supabase Auth
+            if (identity === 'guest') {
+                throw new Error('Guest 模式不需要 Supabase Auth');
+            }
+
+            // 取得對應 email
+            const email = SUPABASE_EMAIL_MAP[identity];
+            if (!email) {
+                throw new Error('未知身份: ' + identity);
+            }
+
+            // 步驟 1: Supabase Auth 登入
+            const loginResult = await window.loginWithSupabase(email, password);
+            if (!loginResult.success) {
+                throw new Error(loginResult.message || '登入失敗');
+            }
+
+            // 步驟 2: 取得 Profile
+            const profileResult = await window.getCurrentSupabaseProfile();
+            if (!profileResult.success) {
+                // 登入成功但無法取得 profile，清理 session
+                await window.logoutSupabase();
+                throw new Error('無法取得使用者資料');
+            }
+
+            // 步驟 3: 檢查 role 一致性
+            if (profileResult.profile.role !== identity) {
+                // role 不符，清理 session
+                await window.logoutSupabase();
+                throw new Error(`身份不符: 您是 ${profileResult.profile.role}，無法進入 ${identity} 模式`);
+            }
+
+            // 驗證成功
+            return {
+                success: true,
+                profile: profileResult.profile
+            };
+
+        } catch (error) {
+            console.error('Supabase Auth 驗證失敗:', error.message);
+            return {
+                success: false,
+                message: error.message || '驗證失敗'
+            };
+        }
+    }
+
+    // === Entry Cloud Write Helpers (v0.2-CLOUD-5-1) ===
+
+    // 轉換本地 entry 為 Supabase entries 格式
+    convertEntryToSupabaseFormat(entry, userId) {
+        return {
+            user_id: userId,
+            legacy_timestamp: entry.timestamp,
+            date: entry.date,
+            today_condition: entry.todayCondition,
+            training_type: entry.trainingType,
+            program_id: entry.programId,
+            program_name_snapshot: entry.programName,
+            program_category_snapshot: entry.programCategory,
+            completion: entry.completion,
+            item_states: entry.itemStates || {},
+            missed_items: entry.missedItems || [],
+            special_items: entry.specialItems || [],
+            movement_notes: entry.movementNotes || ''
+        };
+    }
+
+    // 同步單筆 entry 到 Supabase (不接正式流程)
+    async syncEntryToCloud(entry) {
+        try {
+            // 檢查 guest 模式
+            if (this.currentUser === 'guest') {
+                return {
+                    success: false,
+                    reason: 'guest_mode'
+                };
+            }
+
+            // 檢查 Supabase client
+            if (!window.climbingSupabaseClient) {
+                return {
+                    success: false,
+                    reason: 'no_client'
+                };
+            }
+
+            // 取得 Supabase session
+            const { data: { session }, error: sessionError } = await window.climbingSupabaseClient.auth.getSession();
+
+            if (sessionError || !session) {
+                return {
+                    success: false,
+                    reason: 'no_session'
+                };
+            }
+
+            // 轉換格式
+            const supabaseRow = this.convertEntryToSupabaseFormat(entry, session.user.id);
+
+            // Insert 到 Supabase entries 表 (暫時使用 insert，未啟用 upsert)
+            const { data, error } = await window.climbingSupabaseClient
+                .from('entries')
+                .insert(supabaseRow);
+
+            if (error) {
+                return {
+                    success: false,
+                    error: error
+                };
+            }
+
+            return {
+                success: true,
+                data: data
+            };
+
+        } catch (error) {
+            console.error('syncEntryToCloud 發生錯誤:', error.message);
+            return {
+                success: false,
+                error: error
+            };
+        }
+    }
+
+    // 背景靜默同步單筆 entry 到 Supabase (自動整合用)
+    async syncEntryToCloudSilently(entry) {
+        try {
+            const result = await this.syncEntryToCloud(entry);
+            if (result.success) {
+                // 成功時靜默，不打擾用戶
+                console.log('✅ Entry 已同步至雲端:', entry.timestamp);
+            } else {
+                // 失敗時低調提示，不阻斷流程
+                this.showCloudSyncWarning();
+            }
+        } catch (error) {
+            console.error('雲端同步發生錯誤:', error);
+            this.showCloudSyncWarning();
+        }
+    }
+
+    // 顯示雲端同步失敗的低壓警告
+    showCloudSyncWarning() {
+        // 延遲顯示，避免與主要成功訊息重疊
+        setTimeout(() => {
+            this.showToast('已儲存在本機，雲端同步暫時失敗');
+        }, 100);
+    }
+
+    // 從 Supabase 讀取目前登入者可讀的 entries (測試用)
+    async loadCloudEntries() {
+        try {
+            // 檢查 guest 模式
+            if (this.currentUser === 'guest') {
+                return {
+                    success: false,
+                    reason: 'guest_mode'
+                };
+            }
+
+            // 檢查 Supabase client
+            if (!window.climbingSupabaseClient) {
+                return {
+                    success: false,
+                    reason: 'no_client'
+                };
+            }
+
+            // 取得 Supabase session
+            const { data: { session }, error: sessionError } = await window.climbingSupabaseClient.auth.getSession();
+
+            if (sessionError || !session) {
+                return {
+                    success: false,
+                    reason: 'no_session'
+                };
+            }
+
+            // 從 Supabase entries 表讀取資料
+            const { data: rows, error } = await window.climbingSupabaseClient
+                .from('entries')
+                .select('*')
+                .order('updated_at', { ascending: false });
+
+            if (error) {
+                return {
+                    success: false,
+                    error: error
+                };
+            }
+
+            return {
+                success: true,
+                rows: rows || []
+            };
+
+        } catch (error) {
+            console.error('loadCloudEntries 發生錯誤:', error.message);
+            return {
+                success: false,
+                error: error
+            };
+        }
+    }
+
+    // 轉換 Supabase entries row 為本地 entry object (測試用)
+    convertSupabaseRowToEntry(row) {
+        return {
+            timestamp: row.legacy_timestamp,
+            date: row.date,
+            todayCondition: row.today_condition,
+            trainingType: row.training_type,
+            programId: row.program_id,
+            programName: row.program_name_snapshot,
+            programCategory: row.program_category_snapshot,
+            completion: row.completion,
+            itemStates: row.item_states || {},
+            missedItems: row.missed_items || [],
+            specialItems: row.special_items || [],
+            movementNotes: row.movement_notes || ''
+        };
+    }
+
+    // 測試從 Supabase 讀取 entries 並轉換格式 (手動測試用)
+    async testLoadCloudEntries() {
+        console.log('🔍 開始測試從 Supabase 讀取 entries...');
+
+        try {
+            // 呼叫 loadCloudEntries()
+            const result = await this.loadCloudEntries();
+
+            if (!result.success) {
+                const failResult = {
+                    success: false,
+                    reason: result.reason || 'unknown',
+                    currentUser: this.currentUser
+                };
+                console.log('❌ Cloud entries 讀取失敗:', failResult);
+                return failResult;
+            }
+
+            const { rows } = result;
+
+            // 轉換所有 rows 為本地格式
+            const convertedEntries = rows.map(row => this.convertSupabaseRowToEntry(row));
+
+            // 顯示結果統計
+            console.log('✅ Cloud entries 讀取成功');
+            console.log(`📊 Cloud rows 數量: ${rows.length}`);
+            console.log(`📊 Converted entries 數量: ${convertedEntries.length}`);
+            console.log(`👤 Current user: ${this.currentUser}`);
+
+            // 顯示第一筆 sample（如果存在）
+            if (convertedEntries.length > 0) {
+                console.log('📋 第一筆 sample (converted):');
+                console.log({
+                    timestamp: convertedEntries[0].timestamp,
+                    date: convertedEntries[0].date,
+                    todayCondition: convertedEntries[0].todayCondition,
+                    trainingType: convertedEntries[0].trainingType,
+                    programName: convertedEntries[0].programName,
+                    completion: convertedEntries[0].completion,
+                    movementNotes: convertedEntries[0].movementNotes
+                });
+            }
+
+            const successResult = {
+                success: true,
+                rows: rows,
+                convertedEntries: convertedEntries,
+                count: convertedEntries.length,
+                currentUser: this.currentUser
+            };
+
+            console.log('🎯 完整結果:', successResult);
+            return successResult;
+
+        } catch (error) {
+            console.error('❌ 測試過程發生錯誤:', error);
+            const errorResult = {
+                success: false,
+                error: error.message,
+                currentUser: this.currentUser
+            };
+            return errorResult;
+        }
+    }
+
+    // v0.2-CLOUD-6-2A: 雲端紀錄預覽 (用戶友善版本)
+    async showCloudPreview() {
+        // 檢查 guest 模式
+        if (this.currentUser === 'guest') {
+            this.showToast('guest 不支援雲端預覽', 'error');
+            return;
+        }
+
+        try {
+            // 顯示載入提示
+            this.showToast('正在讀取雲端紀錄...', 'info');
+
+            // 複用現有 testLoadCloudEntries() 邏輯
+            const result = await this.testLoadCloudEntries();
+
+            if (result.success) {
+                const { convertedEntries, count, currentUser } = result;
+
+                // 顯示成功訊息
+                let permissionInfo = '';
+                if (currentUser === 'owner') {
+                    permissionInfo = '（您可以看到開發者和測試員的記錄）';
+                } else if (currentUser === 'tester') {
+                    permissionInfo = '（您只能看到自己的記錄）';
+                }
+
+                this.showToast(`✅ 雲端紀錄讀取成功：${count} 筆 ${permissionInfo}`, 'success');
+
+                // 使用 console.table 顯示資料 (開發者用)
+                if (convertedEntries.length > 0) {
+                    console.log('📖 雲端紀錄預覽:');
+                    console.table(convertedEntries.map(entry => ({
+                        日期: entry.date,
+                        狀態: entry.todayCondition || '未設定',
+                        類型: entry.trainingType || '未設定',
+                        課表: entry.programName || '未設定',
+                        筆記: entry.movementNotes?.substring(0, 30) + (entry.movementNotes?.length > 30 ? '...' : '') || '無'
+                    })));
+                } else {
+                    console.log('📖 雲端紀錄預覽: 無資料');
+                }
+
+                // 新增: 顯示 UI 預覽 (owner 專用)
+                if (this.currentUser === 'owner') {
+                    this.renderCloudPreviewUI(convertedEntries, currentUser);
+                }
+            } else {
+                // 處理失敗情況
+                let errorMsg = '雲端紀錄讀取失敗';
+                if (result.reason === 'guest_mode') {
+                    errorMsg = 'guest 不支援雲端預覽';
+                } else if (result.reason === 'no_client') {
+                    errorMsg = '雲端服務未初始化';
+                } else if (result.reason === 'no_session') {
+                    errorMsg = '未登入雲端服務';
+                }
+                this.showToast(errorMsg, 'error');
+            }
+
+        } catch (error) {
+            console.error('❌ 雲端預覽發生錯誤:', error);
+            this.showToast('雲端預覽發生錯誤', 'error');
+        }
+    }
+
+    // 渲染雲端預覽 UI (owner 專用)
+    renderCloudPreviewUI(entries, userRole) {
+        const section = document.getElementById('cloudPreviewSection');
+        const info = document.getElementById('cloudPreviewInfo');
+        const list = document.getElementById('cloudEntriesList');
+
+        // 顯示預覽區塊
+        section.style.display = 'block';
+
+        // 更新資訊列
+        const roleText = userRole === 'owner' ? '開發者' : '測試員';
+        const permissionText = userRole === 'owner' ? '（包含開發者和測試員紀錄）' : '（僅自己紀錄）';
+        info.innerHTML = `<p>📍 來源：Supabase | 👤 身份：${roleText} | 📅 最近10筆 ${permissionText}</p>`;
+
+        // 取最近10筆並渲染
+        const recentEntries = entries.slice(0, 10);
+        if (recentEntries.length > 0) {
+            list.innerHTML = recentEntries.map(entry => this.createCloudPreviewCard(entry)).join('');
+        } else {
+            list.innerHTML = '<div class="cloud-empty-state">☁️ 目前沒有雲端紀錄</div>';
+        }
+
+        // 滾動到預覽區塊
+        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    // 建立雲端預覽卡片
+    createCloudPreviewCard(entry) {
+        const date = this.formatDate(entry.date);
+        const type = this.getEntryTypeDisplay(entry);
+        const program = entry.programName || '自由訓練';
+        const notes = this.truncateText(entry.movementNotes || '無筆記', 30);
+
+        return `
+            <div class="cloud-entry-card">
+                <div class="cloud-entry-header">
+                    <span class="cloud-entry-date">${date}</span>
+                    <span class="cloud-entry-type">${type}</span>
+                </div>
+                <div class="cloud-entry-content">
+                    <div class="cloud-entry-program">📋 ${program}</div>
+                    <div class="cloud-entry-notes">${notes}</div>
+                </div>
+            </div>
+        `;
+    }
+
+    // 隱藏雲端預覽
+    hideCloudPreview() {
+        const section = document.getElementById('cloudPreviewSection');
+        section.style.display = 'none';
+    }
+
+    // 截斷文字工具函式
+    truncateText(text, maxLength) {
+        if (!text) return '無';
+        return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+    }
+
+    // 取得 Entry 類型顯示文字
+    getEntryTypeDisplay(entry) {
+        // 依據 entry 內容判斷類型
+        if (entry.flow) {
+            const flowTypes = {
+                'challenge': 'Challenge',
+                'easy': 'Easy',
+                'life': 'Life'
+            };
+            return flowTypes[entry.flow] || entry.trainingType || '未分類';
+        }
+
+        // 舊 entry 透過 trainingType 判斷
+        return entry.trainingType || '未分類';
+    }
+
+    // 測試同步第一筆 entry 到 Supabase (手動測試用)
+    async testSyncFirstEntryToCloud() {
+        console.log('🧪 開始測試同步第一筆 entry 到 Supabase...');
+
+        try {
+            // 檢查是否有本地資料
+            if (!this.entries || this.entries.length === 0) {
+                const result = {
+                    success: false,
+                    message: '目前沒有本地 entry 可測試'
+                };
+                console.log('❌ 測試結果:', result);
+                return result;
+            }
+
+            const firstEntry = this.entries[0];
+            console.log('📊 準備同步的 entry:', {
+                timestamp: firstEntry.timestamp,
+                date: firstEntry.date,
+                todayCondition: firstEntry.todayCondition,
+                trainingType: firstEntry.trainingType
+            });
+
+            // 呼叫同步函式
+            const result = await this.syncEntryToCloud(firstEntry);
+
+            console.log('🎯 同步結果:', result);
+            return result;
+
+        } catch (error) {
+            console.error('❌ 測試過程發生錯誤:', error);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+
+    // 測試格式轉換 (不寫入資料庫)
+    async testConvertFirstEntryToCloudFormat() {
+        console.log('🔄 開始測試 entry 格式轉換...');
+
+        try {
+            // 檢查是否有本地資料
+            if (!this.entries || this.entries.length === 0) {
+                console.log('❌ 目前沒有本地 entry 可測試');
+                return { success: false, message: '沒有資料' };
+            }
+
+            // 取得 Supabase session
+            if (!window.climbingSupabaseClient) {
+                console.log('❌ Supabase client 不存在');
+                return { success: false, message: 'no_client' };
+            }
+
+            const { data: { session }, error } = await window.climbingSupabaseClient.auth.getSession();
+
+            if (error || !session) {
+                console.log('❌ 沒有 Supabase session');
+                return { success: false, message: 'no_session' };
+            }
+
+            const firstEntry = this.entries[0];
+            console.log('📊 原始 entry 格式:', firstEntry);
+
+            // 轉換格式
+            const convertedRow = this.convertEntryToSupabaseFormat(firstEntry, session.user.id);
+            console.log('✅ 轉換後 Supabase row 格式:', convertedRow);
+
+            return {
+                success: true,
+                original: firstEntry,
+                converted: convertedRow
+            };
+
+        } catch (error) {
+            console.error('❌ 格式轉換測試發生錯誤:', error);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
     }
 
     // 設定當前用戶
@@ -350,6 +929,297 @@ class ClimbingTrainingJournal {
         this.currentUser = identity;
         localStorage.setItem('currentUser', identity);
         this.userId = this.getUserIdForFirebase();
+
+        // 更新雲端預覽按鈕可見性
+        this.updateCloudPreviewButtonVisibility();
+    }
+
+    // 更新雲端預覽按鈕可見性 (僅 owner 顯示)
+    updateCloudPreviewButtonVisibility() {
+        const cloudPreviewBtn = document.getElementById('cloudPreviewBtn');
+        if (cloudPreviewBtn) {
+            if (this.currentUser === 'owner') {
+                cloudPreviewBtn.style.display = 'inline-block';
+            } else {
+                cloudPreviewBtn.style.display = 'none';
+                // 如果非 owner，自動隱藏預覽區
+                this.hideCloudPreview();
+            }
+        }
+    }
+
+    // 設定入口流程
+    setEntryFlow(flow) {
+        this.currentEntryFlow = flow;
+        if (flow === 'challenge') {
+            this.showForm();
+            // Challenge flow 隱藏 exhausted option
+            this.updateTodayConditionOptions();
+        } else if (flow === 'easy') {
+            this.openEasyEntryFlow();
+        } else if (flow === 'life') {
+            this.openLifeEntryFlow();
+        }
+    }
+
+    // 控制 todayCondition 選項顯示
+    updateTodayConditionOptions() {
+        const exhaustedOption = document.querySelector('#todayCondition option[value="exhausted"]');
+
+        if (!exhaustedOption) return; // 如果找不到 exhausted option 就返回
+
+        if (this.currentEntryFlow === 'challenge' && !this.editingEntryTimestamp) {
+            // Challenge flow 新增模式：隱藏 exhausted option
+            exhaustedOption.style.display = 'none';
+        } else {
+            // 其他情況（包含編輯模式）：顯示 exhausted option
+            exhaustedOption.style.display = '';
+        }
+    }
+
+    // 開啟 Life Flow - 好好過生活模式（獨立表單）
+    openLifeEntryFlow() {
+        // 設定入口流程
+        this.currentEntryFlow = 'life';
+
+        // 開啟獨立的 Life Form
+        this.showLifeForm();
+    }
+
+    // 顯示 Life Form
+    showLifeForm() {
+        // 顯示 Life Form 覆蓋層
+        document.getElementById('lifeEntryForm').style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+
+        // 設定今天日期為預設值
+        const lifeDateInput = document.getElementById('lifeDate');
+        if (lifeDateInput) {
+            lifeDateInput.value = new Date().toISOString().split('T')[0];
+        }
+
+        // 清除之前的輸入
+        this.clearLifeFlowInputs();
+    }
+
+    // 開啟 Easy Flow - 慢慢來就好模式（獨立表單）
+    openEasyEntryFlow() {
+        // 設定入口流程
+        this.currentEntryFlow = 'easy';
+
+        // 開啟獨立的 Easy Form
+        this.showEasyForm();
+    }
+
+    // 隱藏 Easy mode 不需要的表單區塊
+    hideFormSectionsForEasyMode() {
+        // 隱藏 todayCondition 選擇器
+        const conditionGroup = document.querySelector('.form-group.journal-main:nth-of-type(1)');
+        if (conditionGroup) {
+            conditionGroup.style.display = 'none';
+        }
+
+        // 隱藏 trainingType
+        const trainingTypeGroup = document.querySelector('.form-group.journal-main:nth-of-type(2)');
+        if (trainingTypeGroup) {
+            trainingTypeGroup.style.display = 'none';
+        }
+
+        // 隱藏 Program
+        const programGroup = document.querySelector('.form-group.journal-main:nth-of-type(3)');
+        if (programGroup) {
+            programGroup.style.display = 'none';
+        }
+
+        // 隱藏 completion
+        const completionGroup = document.querySelector('.form-group.journal-main:nth-of-type(4)');
+        if (completionGroup) {
+            completionGroup.style.display = 'none';
+        }
+
+        // 隱藏 Movement 狀態
+        const movementStatusGroup = document.querySelector('.form-group.journal-main:nth-of-type(5)');
+        if (movementStatusGroup) {
+            movementStatusGroup.style.display = 'none';
+        }
+
+        // 隱藏原 movement 備註
+        const movementNotesInput = document.getElementById('movementNotes');
+        const movementNotesGroup = movementNotesInput ? movementNotesInput.closest('.form-group') : null;
+        if (movementNotesGroup) {
+            movementNotesGroup.style.display = 'none';
+        }
+    }
+
+    // 預處理 Easy Flow 資料合併到 movementNotes
+    // 注意：此函式僅用於舊版 Easy Flow（使用 #trainingForm），
+    // 新版 Easy Flow 使用獨立表單，不需要此預處理
+    preprocessEasyFlowData() {
+        // 由於 Easy Flow 已改用獨立表單，此函式不再被使用
+        // 但保留以防編輯舊 Easy entry 時需要相容性
+        if (this.currentEntryFlow !== 'easy') {
+            return;
+        }
+
+        // 檢查是否在 #trainingForm 環境中（編輯模式）
+        const inTrainingForm = document.getElementById('easyModeSection')?.style.display === 'block';
+        if (!inTrainingForm) {
+            return; // 如果不在大表單中，不執行預處理
+        }
+
+        // 收集選中的 easy choice 選項
+        const checkedChoices = [];
+        const easyChoices = document.querySelectorAll('input[name="easyChoice"]:checked');
+        easyChoices.forEach(checkbox => {
+            checkedChoices.push(checkbox.value);
+        });
+
+        // 獲取一句話輸入
+        const easyNoteInput = document.getElementById('easyNote');
+        const noteText = easyNoteInput ? easyNoteInput.value.trim() : '';
+
+        // 合併格式：選項文字｜一句話
+        let mergedText = '';
+        if (checkedChoices.length > 0) {
+            mergedText = checkedChoices.join('、');
+        }
+        if (noteText) {
+            if (mergedText) {
+                mergedText += '｜' + noteText;
+            } else {
+                mergedText = noteText;
+            }
+        }
+
+        // 設定到 movementNotes 欄位
+        const movementNotesInput = document.getElementById('movementNotes');
+        if (movementNotesInput) {
+            movementNotesInput.value = mergedText;
+        }
+    }
+
+    // 清除 Easy Flow 輸入欄位
+    clearEasyFlowInputs() {
+        // 清除所有 easyChoice 勾選
+        const easyChoices = document.querySelectorAll('input[name="easyChoice"]');
+        easyChoices.forEach(checkbox => {
+            checkbox.checked = false;
+        });
+
+        // 清除 easyNote 文字輸入
+        const easyNoteInput = document.getElementById('easyNote');
+        if (easyNoteInput) {
+            easyNoteInput.value = '';
+        }
+
+        // 重置日期為今天（適用於獨立 Easy Form）
+        const easyDateInput = document.getElementById('easyDate');
+        if (easyDateInput) {
+            easyDateInput.value = new Date().toISOString().split('T')[0];
+        }
+    }
+
+    // 建立 Life Flow Entry 資料
+    createLifeEntryData() {
+        // 收集 Life Form 資料
+        const lifeDate = document.getElementById('lifeDate').value;
+        const selectedChoice = document.querySelector('input[name="lifeChoice"]:checked');
+        const lifeNote = document.getElementById('lifeNote').value.trim();
+
+        // 合併 Life Flow 資料格式：選項｜一句話
+        let lifeMergedText = '';
+        if (selectedChoice) {
+            lifeMergedText = selectedChoice.value;
+        }
+        if (lifeNote) {
+            if (lifeMergedText) {
+                lifeMergedText += '｜' + lifeNote;
+            } else {
+                lifeMergedText = lifeNote;
+            }
+        }
+
+        // 產生完整相容的 entry object
+        return {
+            timestamp: new Date().toISOString(),
+            id: Date.now(),
+            date: lifeDate,
+            todayCondition: 'exhausted',
+            trainingType: '功能訓練',
+            programId: 'exhausted-reflection',
+            programName: '非常疲憊簡化紀錄',
+            programCategory: 'rest',
+            completion: 'little',
+            itemStates: {},
+            missedItems: [],
+            specialItems: [],
+            movementNotes: lifeMergedText,
+            // Legacy 欄位相容 - 與 getFormData() 一致
+            week: '',
+            mainTraining: '',
+            coreState: '',
+            legState: '',
+            shoulderState: '',
+            fatigue: '5',
+            exercises: '',
+            rpe: '7',
+            quality: '7',
+            transfer: '',
+            nextDayFeeling: '',
+            notes: ''
+        };
+    }
+
+    // 建立 Easy Flow Entry 資料
+    createEasyEntryData() {
+        // 收集 Easy Form 資料
+        const easyDate = document.getElementById('easyDate').value;
+        const selectedChoices = document.querySelectorAll('input[name="easyChoice"]:checked');
+        const easyNote = document.getElementById('easyNote').value.trim();
+
+        // 合併格式：選項文字｜一句話
+        let easyMergedText = '';
+        if (selectedChoices.length > 0) {
+            const choices = Array.from(selectedChoices).map(cb => cb.value);
+            easyMergedText = choices.join('、');
+        }
+        if (easyNote) {
+            if (easyMergedText) {
+                easyMergedText += '｜' + easyNote;
+            } else {
+                easyMergedText = easyNote;
+            }
+        }
+
+        // 產生完整相容的 entry object
+        return {
+            timestamp: new Date().toISOString(),
+            id: Date.now(),
+            date: easyDate,
+            todayCondition: 'normal',
+            trainingType: '攀岩',
+            programId: 'easy-reflection',
+            programName: '慢慢來簡化紀錄',
+            programCategory: 'light',
+            completion: 'little',
+            itemStates: {},
+            missedItems: [],
+            specialItems: [],
+            movementNotes: easyMergedText,
+            // Legacy 欄位相容 - 與 getFormData() 一致
+            week: '',
+            mainTraining: '',
+            coreState: '',
+            legState: '',
+            shoulderState: '',
+            fatigue: '5',
+            exercises: '',
+            rpe: '7',
+            quality: '7',
+            transfer: '',
+            nextDayFeeling: '',
+            notes: ''
+        };
     }
 
     // 切換身份
@@ -492,7 +1362,7 @@ class ClimbingTrainingJournal {
             { day: 2, title: "攀岩技術日", template: "climbing_technique" },
             { day: 3, title: "核心傳導 × anti-rotation 日", template: "core" },
             { day: 4, title: "單腳穩定 × 採點日", template: "leg" },
-            { day: 5, title: "攀岩整合日", template: "climbing_integration" },
+            { day: 5, title: "攀岩體能日", template: "climbing_integration" },
             { day: 6, title: "恢復 / flow movement 日", template: "recovery" }
         ];
 
@@ -522,7 +1392,7 @@ class ClimbingTrainingJournal {
                 name: "核心",
                 type: "功能訓練",
                 category: "核心",
-                items: ["核心穩定", "張力傳導", "抗旋轉", "呼吸控制"],
+                items: ["RKC 平板撐", "下腹抬腿", "單邊農夫走路", "熊爬"],
                 createdAt: new Date().toISOString()
             },
             {
@@ -530,7 +1400,7 @@ class ClimbingTrainingJournal {
                 name: "肩胛穩定",
                 type: "功能訓練",
                 category: "肩胛穩定",
-                items: ["肩胛控制", "拉力", "lock off", "張力"],
+                items: ["單邊划船", "引體向上", "中下斜方", "後三角"],
                 createdAt: new Date().toISOString()
             },
             {
@@ -538,23 +1408,23 @@ class ClimbingTrainingJournal {
                 name: "單腳踩點",
                 type: "功能訓練",
                 category: "單腳踩點",
-                items: ["單腳穩定", "重心轉移", "高腳", "壓腳"],
+                items: ["單腳 RDL", "分腿蹲", "側向移動", "內收肌"],
                 createdAt: new Date().toISOString()
             },
             {
                 id: "program_climbing_tech",
-                name: "攀岩技術",
+                name: "技術",
                 type: "攀岩",
                 category: "攀岩",
-                items: ["腳法", "節奏", "silent feet", "route reading"],
+                items: ["讀線", "重心轉移", "腳法", "新動作"],
                 createdAt: new Date().toISOString()
             },
             {
                 id: "program_climbing_integration",
-                name: "攀岩整合",
+                name: "體能",
                 type: "攀岩",
                 category: "攀岩",
-                items: ["movement整合", "耐力", "策略", "心理"],
+                items: ["指力", "拉力", "張力", "耐力"],
                 createdAt: new Date().toISOString()
             }
         ];
@@ -870,7 +1740,7 @@ class ClimbingTrainingJournal {
                 ]
             },
             leg: {
-                name: '🟢 單腳穩定 × 採點日',
+                name: '🟢 單腳踩點 × 採點日',
                 description: '高腳、壓腳、單腳穩定、骨盆控制、movement 穩定',
                 exercises: [
                     {
@@ -980,7 +1850,7 @@ class ClimbingTrainingJournal {
                 ]
             },
             climbing_integration: {
-                name: '🧗 攀岩整合日',
+                name: '🧗 攀岩體能日',
                 description: '整合訓練成果，主線嘗試，movement 練習',
                 exercises: [
                     {
@@ -1077,6 +1947,19 @@ class ClimbingTrainingJournal {
             this.showForm();
         });
 
+        // 首頁三入口按鈕
+        document.getElementById('challengeFlowBtn').addEventListener('click', () => {
+            this.setEntryFlow('challenge');
+        });
+
+        document.getElementById('easyFlowBtn').addEventListener('click', () => {
+            this.setEntryFlow('easy');
+        });
+
+        document.getElementById('lifeFlowBtn').addEventListener('click', () => {
+            this.setEntryFlow('life');
+        });
+
         // 匯出 CSV 按鈕
         document.getElementById('exportCSV').addEventListener('click', () => {
             this.exportToCSV();
@@ -1087,16 +1970,52 @@ class ClimbingTrainingJournal {
             this.exportToJSON();
         });
 
-        // 清除所有資料按鈕
-        document.getElementById('clearAll').addEventListener('click', () => {
-            this.clearAllData();
+        // 匯出完整備份按鈕
+        document.getElementById('exportBackup').addEventListener('click', () => {
+            this.exportBackup();
         });
+
+        // 預覽雲端紀錄按鈕 (僅 owner 顯示)
+        const cloudPreviewBtn = document.getElementById('cloudPreviewBtn');
+        if (cloudPreviewBtn) {
+            // 只有 owner 才顯示按鈕
+            if (this.currentUser === 'owner') {
+                cloudPreviewBtn.style.display = 'inline-block';
+                if (!cloudPreviewBtn.hasAttribute('data-bound')) {
+                    cloudPreviewBtn.setAttribute('data-bound', 'true');
+                    cloudPreviewBtn.addEventListener('click', () => {
+                        this.showCloudPreview();
+                    });
+                }
+            } else {
+                cloudPreviewBtn.style.display = 'none';
+            }
+        }
+
+        // 關閉雲端預覽按鈕
+        const closeCloudPreviewBtn = document.getElementById('closeCloudPreview');
+        if (closeCloudPreviewBtn && !closeCloudPreviewBtn.hasAttribute('data-bound')) {
+            closeCloudPreviewBtn.setAttribute('data-bound', 'true');
+            closeCloudPreviewBtn.addEventListener('click', () => {
+                this.hideCloudPreview();
+            });
+        }
+
+        // 清除所有資料按鈕
+        const clearAllBtn = document.getElementById('clearAll');
+        if (clearAllBtn && !clearAllBtn.hasAttribute('data-bound')) {
+            clearAllBtn.setAttribute('data-bound', 'true');
+            clearAllBtn.addEventListener('click', () => {
+                this.clearAllData();
+            });
+        }
 
         // 表單提交
         const trainingForm = document.getElementById('trainingForm');
         if (trainingForm && !trainingForm.dataset.bound) {
             trainingForm.addEventListener('submit', (e) => {
                 e.preventDefault();
+                this.preprocessEasyFlowData();
                 this.handleFormSubmit();
             });
             trainingForm.dataset.bound = 'true';
@@ -1114,8 +2033,67 @@ class ClimbingTrainingJournal {
             }
         });
 
+        // Life Form 提交事件
+        const lifeForm = document.getElementById('lifeForm');
+        if (lifeForm && !lifeForm.dataset.bound) {
+            lifeForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.handleLifeFormSubmit();
+            });
+            lifeForm.dataset.bound = 'true';
+        }
+
+        // 取消 Life Form
+        const cancelLifeForm = document.getElementById('cancelLifeForm');
+        if (cancelLifeForm) {
+            cancelLifeForm.addEventListener('click', () => {
+                this.hideLifeForm();
+            });
+        }
+
+        // 點擊 Life Form 覆蓋層關閉表單
+        document.getElementById('lifeEntryForm').addEventListener('click', (e) => {
+            if (e.target.id === 'lifeEntryForm') {
+                this.hideLifeForm();
+            }
+        });
+
+        // Easy Form 提交事件
+        const easyForm = document.getElementById('easyForm');
+        if (easyForm && !easyForm.dataset.bound) {
+            easyForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.handleEasyFormSubmit();
+            });
+            easyForm.dataset.bound = 'true';
+        }
+
+        // 取消 Easy Form
+        const cancelEasyForm = document.getElementById('cancelEasyForm');
+        if (cancelEasyForm) {
+            cancelEasyForm.addEventListener('click', () => {
+                this.hideEasyForm();
+            });
+        }
+
+        // 點擊 Easy Form 覆蓋層關閉表單
+        document.getElementById('easyEntryForm').addEventListener('click', (e) => {
+            if (e.target.id === 'easyEntryForm') {
+                this.hideEasyForm();
+            }
+        });
+
         // 滑桿值即時更新
         this.setupSliders();
+
+        // v0.2-REST-1-1: todayCondition 變化監聽
+        const todayConditionSelect = document.getElementById('todayCondition');
+        if (todayConditionSelect && !todayConditionSelect.hasAttribute('data-exhausted-bound')) {
+            todayConditionSelect.setAttribute('data-exhausted-bound', 'true');
+            todayConditionSelect.addEventListener('change', (e) => {
+                this.toggleExhaustedMode(e.target.value);
+            });
+        }
 
         // 訓練模板相關事件
         this.setupTemplateEvents();
@@ -1348,7 +2326,7 @@ class ClimbingTrainingJournal {
             if (header.dataset.bound === 'true') return;
 
             header.addEventListener('click', () => {
-                const section = header.closest('.form-section');
+                const section = header.closest('.form-section') || header.closest('.data-management-section');
                 const content = section ? section.querySelector('.collapsible-content') : null;
                 const toggleHint = header.querySelector('.toggle-hint');
 
@@ -1751,11 +2729,11 @@ class ClimbingTrainingJournal {
                     </label>
                     <label class="status-option">
                         <input type="radio" name="item-${item}" value="weak">
-                        <span class="status-text">⚠️ 弱項</span>
+                        <span class="status-text">😕 不太順</span>
                     </label>
                     <label class="status-option">
                         <input type="radio" name="item-${item}" value="strong">
-                        <span class="status-text">💪 強項</span>
+                        <span class="status-text">✨ 很順</span>
                     </label>
                 </div>
             </div>
@@ -1891,14 +2869,14 @@ class ClimbingTrainingJournal {
 
             if (grouped.strong.length > 0) {
                 html += `<div class="entry-section">
-                    <h4>💪 強項</h4>
+                    <h4>✨ 很順</h4>
                     <p>${grouped.strong.join(', ')}</p>
                 </div>`;
             }
 
             if (grouped.weak.length > 0) {
                 html += `<div class="entry-section">
-                    <h4>⚠️ 弱項</h4>
+                    <h4>😕 不太順</h4>
                     <p>${grouped.weak.join(', ')}</p>
                 </div>`;
             }
@@ -2019,9 +2997,13 @@ class ClimbingTrainingJournal {
         document.getElementById('entryForm').style.display = 'flex';
         document.body.style.overflow = 'hidden';
 
-        // 重置表單
+        // 重置表單 - 必須先 reset 再讀取值
         document.getElementById('trainingForm').reset();
         this.setTodayDate();
+
+        // v0.2-REST-1-1: 重置後讀取 todayCondition 並設置 UI
+        const todayCondition = document.getElementById('todayCondition').value;
+        this.toggleExhaustedMode(todayCondition);
 
         // 重置滑桿顯示值
         document.getElementById('fatigueValue').textContent = '5';
@@ -2044,8 +3026,196 @@ class ClimbingTrainingJournal {
         // v0.2-E-1: 清除編輯模式，防止取消編輯後誤覆蓋舊紀錄
         this.editingEntryTimestamp = null;
 
+        // 重置入口流程狀態
+        this.currentEntryFlow = null;
+
+        // 恢復所有可能被隱藏的表單區塊
+        this.restoreFormSections();
+
+        // 隱藏 Easy mode 和 Exhausted mode 區塊
+        const easySection = document.getElementById('easyModeSection');
+        if (easySection) {
+            easySection.style.display = 'none';
+            // 清除 Easy Flow 輸入欄位
+            this.clearEasyFlowInputs();
+        }
+
+        const exhaustedSection = document.getElementById('exhaustedModeSection');
+        if (exhaustedSection) {
+            exhaustedSection.style.display = 'none';
+        }
+
         document.getElementById('entryForm').style.display = 'none';
         document.body.style.overflow = 'auto';
+    }
+
+    // 隱藏 Life Form
+    hideLifeForm() {
+        // 清除 Life Flow 輸入欄位
+        this.clearLifeFlowInputs();
+
+        // 隱藏 Life Form
+        document.getElementById('lifeEntryForm').style.display = 'none';
+        document.body.style.overflow = 'auto';
+    }
+
+    // 清除 Life Flow 輸入欄位
+    clearLifeFlowInputs() {
+        // 清除 life choice 勾選
+        const lifeChoices = document.querySelectorAll('input[name="lifeChoice"]');
+        lifeChoices.forEach(radio => {
+            radio.checked = false;
+        });
+
+        // 清除 life note 文字輸入
+        const lifeNoteInput = document.getElementById('lifeNote');
+        if (lifeNoteInput) {
+            lifeNoteInput.value = '';
+        }
+
+        // 重置日期為今天
+        const lifeDateInput = document.getElementById('lifeDate');
+        if (lifeDateInput) {
+            lifeDateInput.value = new Date().toISOString().split('T')[0];
+        }
+    }
+
+    // 顯示 Easy Form
+    showEasyForm() {
+        // 顯示 Easy Form 覆蓋層
+        document.getElementById('easyEntryForm').style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+
+        // 設定今天日期為預設值
+        const easyDateInput = document.getElementById('easyDate');
+        if (easyDateInput) {
+            easyDateInput.value = new Date().toISOString().split('T')[0];
+        }
+
+        // 清除之前的輸入
+        this.clearEasyFlowInputs();
+    }
+
+    // 隱藏 Easy Form
+    hideEasyForm() {
+        // 清除 Easy Flow 輸入欄位
+        this.clearEasyFlowInputs();
+
+        // 隱藏 Easy Form
+        document.getElementById('easyEntryForm').style.display = 'none';
+        document.body.style.overflow = 'auto';
+    }
+
+    // 恢復所有表單區塊顯示
+    restoreFormSections() {
+        // 恢復 todayCondition 選擇器
+        const conditionGroup = document.querySelector('.form-group.journal-main:nth-of-type(1)');
+        if (conditionGroup) {
+            conditionGroup.style.display = '';
+        }
+
+        // 恢復 trainingType
+        const trainingTypeGroup = document.querySelector('.form-group.journal-main:nth-of-type(2)');
+        if (trainingTypeGroup) {
+            trainingTypeGroup.style.display = '';
+        }
+
+        // 恢復 Program
+        const programGroup = document.querySelector('.form-group.journal-main:nth-of-type(3)');
+        if (programGroup) {
+            programGroup.style.display = '';
+        }
+
+        // 恢復 completion
+        const completionGroup = document.querySelector('.form-group.journal-main:nth-of-type(4)');
+        if (completionGroup) {
+            completionGroup.style.display = '';
+        }
+
+        // 恢復 Movement 狀態
+        const movementStatusGroup = document.querySelector('.form-group.journal-main:nth-of-type(5)');
+        if (movementStatusGroup) {
+            movementStatusGroup.style.display = '';
+        }
+
+        // 恢復原 movement 備註
+        const movementNotesInput = document.getElementById('movementNotes');
+        const movementNotesGroup = movementNotesInput ? movementNotesInput.closest('.form-group') : null;
+        if (movementNotesGroup) {
+            movementNotesGroup.style.display = '';
+        }
+    }
+
+    // v0.2-REST-1-1: 疲憊模式 UI 切換
+    toggleExhaustedMode(condition) {
+        const exhaustedSection = document.getElementById('exhaustedModeSection');
+
+        // 精確選擇需要隱藏的訓練相關元素 - 除了 todayCondition (第1個) 和 exhaustedModeSection
+        const trainingTypeGroup = document.querySelector('.form-group.journal-main:nth-of-type(2)'); // 今日訓練類型
+        const programGroup = document.querySelector('.form-group.journal-main:nth-of-type(3)'); // 今天的課表
+        const completionGroup = document.querySelector('.form-group.journal-main:nth-of-type(4)'); // 完成度
+        const movementStatusGroup = document.querySelector('.form-group.journal-main:nth-of-type(5)'); // Movement 狀態
+
+        // 使用更可靠的方法選擇 movementNotes 區塊 - 通過 ID 找到父級
+        const movementNotesInput = document.getElementById('movementNotes');
+        const movementNotesGroup = movementNotesInput ? movementNotesInput.closest('.form-group') : null;
+
+        // 選擇自訂課表區塊 - 通過文字內容查找
+        const programBuilderHeaders = Array.from(document.querySelectorAll('h3'));
+        const programBuilderHeader = programBuilderHeaders.find(h3 => h3.textContent.includes('自訂課表'));
+        const programBuilderSection = programBuilderHeader ? programBuilderHeader.closest('.form-section') : null;
+
+        // 選擇 Legacy「今日體感」區塊 - 精準文字查找
+        const legacyBodyStateHeader = Array.from(document.querySelectorAll('.form-section h3'))
+            .find(h3 => h3.textContent.includes('今日體感'));
+        const legacyBodyStateSection = legacyBodyStateHeader ? legacyBodyStateHeader.closest('.form-section') : null;
+
+        if (condition === 'exhausted') {
+            // 顯示疲憊模式
+            if (exhaustedSection) {
+                exhaustedSection.style.display = 'block';
+            }
+
+            // 隱藏訓練相關表單元素
+            [trainingTypeGroup, programGroup, completionGroup, movementStatusGroup, movementNotesGroup].forEach((element) => {
+                if (element) {
+                    element.classList.add('exhausted-hide');
+                }
+            });
+
+            // 隱藏自訂課表
+            if (programBuilderSection) {
+                programBuilderSection.classList.add('exhausted-hide');
+            }
+
+            // 隱藏 Legacy「今日體感」區塊
+            if (legacyBodyStateSection) {
+                legacyBodyStateSection.classList.add('exhausted-hide');
+            }
+
+        } else {
+            // 隱藏疲憊模式
+            if (exhaustedSection) {
+                exhaustedSection.style.display = 'none';
+            }
+
+            // 顯示訓練相關表單元素
+            [trainingTypeGroup, programGroup, completionGroup, movementStatusGroup, movementNotesGroup].forEach((element) => {
+                if (element) {
+                    element.classList.remove('exhausted-hide');
+                }
+            });
+
+            // 顯示自訂課表
+            if (programBuilderSection) {
+                programBuilderSection.classList.remove('exhausted-hide');
+            }
+
+            // 移除 Legacy「今日體感」區塊的隱藏（但不強制顯示，保持原本 display:none 狀態）
+            if (legacyBodyStateSection) {
+                legacyBodyStateSection.classList.remove('exhausted-hide');
+            }
+        }
     }
 
     // 檢查 entry 是否有實際內容（只有真正用戶輸入或 movement 資料才算 meaningful）
@@ -2121,31 +3291,6 @@ class ClimbingTrainingJournal {
 
         const result = hasTextData || hasItemStates || hasLegacyBodyData || hasExerciseData;
 
-        // 只有當結果是 meaningful (true) 時才輸出詳細 debug 資訊
-        if (result) {
-            console.log('[Meaningful Entry Debug JSON]', JSON.stringify({
-                date: entry.date,
-                entryBasicInfo: {
-                    movementNotes: entry.movementNotes || '',
-                    notes: entry.notes || '',
-                    mainTraining: entry.mainTraining || '',
-                    nextDayFeeling: entry.nextDayFeeling || '',
-                    exercises: entry.exercises || []
-                },
-                judgmentResults: {
-                    hasTextData,
-                    hasItemStates,
-                    hasLegacyBodyData,
-                    hasExerciseData,
-                    finalResult: result
-                },
-                meaningfulData: {
-                    meaningfulItemStates,
-                    meaningfulLegacyBodyData
-                }
-            }, null, 2));
-        }
-
         return result;
     }
 
@@ -2166,20 +3311,42 @@ class ClimbingTrainingJournal {
                 // 清除編輯模式
                 this.editingEntryTimestamp = null;
 
+                // 建立 savedEntry 用於雲端同步
+                const savedEntry = formData;
+
                 this.saveToStorage();
                 this.renderEntries();
                 this.hideForm();
                 this.showToast('紀錄已更新！');
+
+                // 本機儲存成功後，背景同步雲端
+                if (this.currentUser !== 'guest') {
+                    this.syncEntryToCloudSilently(savedEntry);
+                }
             } else {
                 alert('找不到要編輯的紀錄，請重新整理頁面。');
                 return;
             }
         } else {
             // 新增模式：v0.2-D 允許同日期多筆紀錄
+
+            // 檢查是否為第一次紀錄（在 push 前判斷）
+            const wasFirstEntry = this.entries.length === 0;
+
+            // v0.2-ECHO-4B: 生成 Echo 回應
+            const echoResponse = this.generateEchoResponse(formData);
+
+            // 將 Echo 回應附加到 entry
+            // TODO: Echo 儲存策略未來可評估改為 render-time dynamic generation
+            formData.echoResponse = echoResponse;
+
             this.entries.push(formData);
 
-            // 按日期排序 (最新的在前面)
-            this.entries.sort((a, b) => new Date(b.date) - new Date(a.date));
+            // 按時間戳排序 (最新的在前面)
+            this.entries.sort((a, b) => new Date(b.timestamp || b.date) - new Date(a.timestamp || a.date));
+
+            // 建立 savedEntry 用於雲端同步
+            const savedEntry = formData;
 
             this.saveToStorage();
             this.renderEntries();
@@ -2187,6 +3354,11 @@ class ClimbingTrainingJournal {
 
             // 顯示成功訊息
             this.showToast('紀錄已儲存！');
+
+            // 本機儲存成功後，背景同步雲端
+            if (this.currentUser !== 'guest') {
+                this.syncEntryToCloudSilently(savedEntry);
+            }
         }
 
         // 顯示陪伴訊息
@@ -2194,14 +3366,101 @@ class ClimbingTrainingJournal {
 
         // 檢查是否需要顯示 onboarding
         setTimeout(() => {
-            this.checkFirstTimeOnboarding();
+            this.checkFirstTimeOnboarding(wasFirstEntry);
+        }, 500);
+    }
+
+    // Life Form 提交處理
+    handleLifeFormSubmit() {
+        const lifeEntryData = this.createLifeEntryData();
+
+        // 檢查是否為第一次紀錄（在 push 前判斷）
+        const wasFirstEntry = this.entries.length === 0;
+
+        // v0.2-ECHO-4B: 生成 Echo 回應
+        // TODO: Echo 儲存策略未來可評估改為 render-time dynamic generation
+        const echoResponse = this.generateEchoResponse(lifeEntryData);
+        lifeEntryData.echoResponse = echoResponse;
+
+        // Life Form 只處理新增模式（不用於編輯）
+        this.entries.push(lifeEntryData);
+
+        // 按時間戳排序 (最新的在前面)
+        this.entries.sort((a, b) => new Date(b.timestamp || b.date) - new Date(a.timestamp || a.date));
+
+        // 建立 savedEntry 用於雲端同步
+        const savedEntry = lifeEntryData;
+
+        this.saveToStorage();
+        this.renderEntries();
+        this.hideLifeForm();
+
+        // 顯示成功訊息
+        this.showToast('生活紀錄已儲存！');
+
+        // 本機儲存成功後，背景同步雲端
+        if (this.currentUser !== 'guest') {
+            this.syncEntryToCloudSilently(savedEntry);
+        }
+
+        // 顯示陪伴訊息
+        this.showJournalCompanionMessage(lifeEntryData.todayCondition, this.entries.length);
+
+        // 檢查是否需要顯示 onboarding
+        setTimeout(() => {
+            this.checkFirstTimeOnboarding(wasFirstEntry);
+        }, 500);
+    }
+
+    // Easy Form 提交處理
+    handleEasyFormSubmit() {
+        const easyEntryData = this.createEasyEntryData();
+
+        // 檢查是否為第一次紀錄（在 push 前判斷）
+        const wasFirstEntry = this.entries.length === 0;
+
+        // v0.2-ECHO-4B: 生成 Echo 回應
+        // TODO: Echo 儲存策略未來可評估改為 render-time dynamic generation
+        const echoResponse = this.generateEchoResponse(easyEntryData);
+        easyEntryData.echoResponse = echoResponse;
+
+        // Easy Form 只處理新增模式（不用於編輯）
+        this.entries.push(easyEntryData);
+
+        // 按時間戳排序 (最新的在前面)
+        this.entries.sort((a, b) => new Date(b.timestamp || b.date) - new Date(a.timestamp || a.date));
+
+        // 建立 savedEntry 用於雲端同步
+        const savedEntry = easyEntryData;
+
+        this.saveToStorage();
+        this.renderEntries();
+        this.hideEasyForm();
+
+        // 顯示成功訊息
+        this.showToast('輕鬆紀錄已儲存！');
+
+        // 本機儲存成功後，背景同步雲端
+        if (this.currentUser !== 'guest') {
+            this.syncEntryToCloudSilently(savedEntry);
+        }
+
+        // 顯示陪伴訊息
+        this.showJournalCompanionMessage(easyEntryData.todayCondition, this.entries.length);
+
+        // 檢查是否需要顯示 onboarding
+        setTimeout(() => {
+            this.checkFirstTimeOnboarding(wasFirstEntry);
         }, 500);
     }
 
     // 取得表單資料
     getFormData() {
+        // 取得當前狀態
+        const todayCondition = document.getElementById('todayCondition').value;
+
         // 收集item狀態
-        const itemStates = {};
+        let itemStates = {};
         const itemRadios = document.querySelectorAll('input[type="radio"]:checked');
         itemRadios.forEach(radio => {
             if (radio.name.startsWith('item-')) {
@@ -2211,15 +3470,24 @@ class ClimbingTrainingJournal {
         });
 
         // 為相容性轉換為舊格式（將新的weak/strong映射到舊的missed/special）
-        const missedItems = [];
-        const specialItems = [];
-        Object.entries(itemStates).forEach(([item, status]) => {
-            if (status === 'missed' || status === 'weak') missedItems.push(item);
-            if (status === 'special' || status === 'strong') specialItems.push(item);
-        });
+        let missedItems = [];
+        let specialItems = [];
+
+        // v0.2-REST-1-1: 疲憊模式清空 item 狀態
+        if (todayCondition === 'exhausted') {
+            // 疲憊模式不處理訓練項目狀態
+            itemStates = {};
+            missedItems = [];
+            specialItems = [];
+        } else {
+            Object.entries(itemStates).forEach(([item, status]) => {
+                if (status === 'missed' || status === 'weak') missedItems.push(item);
+                if (status === 'special' || status === 'strong') specialItems.push(item);
+            });
+        }
 
         // 取得選中的 Program 資訊
-        const selectedProgramName = document.getElementById('programSelect').value;
+        let selectedProgramName = document.getElementById('programSelect').value;
         let programId = null;
         let programCategory = '';
 
@@ -2231,12 +3499,49 @@ class ClimbingTrainingJournal {
             }
         }
 
+        // v0.2-REST-1-1: 疲憊模式 Program 預設值
+        if (todayCondition === 'exhausted') {
+            programId = 'exhausted-reflection';
+            programCategory = 'rest';
+            selectedProgramName = '非常疲憊簡化紀錄';
+        }
+
+        // v0.2-REST-1-1: 處理疲憊模式資料
+        let trainingType = document.querySelector('input[name="trainingType"]:checked')?.value || '';
+        let completion = document.querySelector('input[name="completion"]:checked')?.value || '';
+        let movementNotes = document.getElementById('movementNotes').value;
+
+        if (todayCondition === 'exhausted') {
+            // 疲憊模式預設值 - 修正 schema 相容性
+            trainingType = '功能訓練';
+            completion = 'little';
+
+            // 合併疲憊模式選項與備註 - 使用定稿格式
+            const exhaustedOption = document.querySelector('input[name="exhaustedChoice"]:checked')?.value || '';
+            const exhaustedNote = document.getElementById('exhaustedNote')?.value?.trim() || '';
+
+            // 定稿格式合併規則
+            if (exhaustedOption && exhaustedNote) {
+                // 快速選項 + 一句話
+                movementNotes = `${exhaustedOption}｜${exhaustedNote}`;
+            } else if (exhaustedOption) {
+                // 只有快速選項
+                movementNotes = exhaustedOption;
+            } else if (exhaustedNote) {
+                // 只有一句話
+                movementNotes = exhaustedNote;
+            } else {
+                // 都沒有 - 預設值
+                movementNotes = '今天沒有硬撐，很穩';
+            }
+        }
+
         return {
             date: document.getElementById('date').value,
-            todayCondition: document.getElementById('todayCondition').value,
-            trainingType: document.querySelector('input[name="trainingType"]:checked')?.value || '',
+            todayCondition: todayCondition,
+            trainingType: trainingType,
             program: selectedProgramName,
-            completion: document.querySelector('input[name="completion"]:checked')?.value || '',
+            completion: completion,
 
             // 新的 Program 相關欄位
             programId: programId,
@@ -2249,7 +3554,7 @@ class ClimbingTrainingJournal {
             // 相容性欄位
             missedItems: missedItems,
             specialItems: specialItems,
-            movementNotes: document.getElementById('movementNotes').value,
+            movementNotes: movementNotes,
 
             // 保留舊欄位以保持localStorage相容 (設為空值，不再使用週數)
             week: '',
@@ -2276,7 +3581,7 @@ class ClimbingTrainingJournal {
             container.innerHTML = `
                 <div class="empty-state">
                     <h3>🧗‍♂️ 尚無訓練紀錄</h3>
-                    <p>點擊「新增今日紀錄」開始記錄你的攀岩訓練 movement 觀察</p>
+                    <p>點擊「新增今日紀錄」開始記錄你的攀岩生活點滴</p>
                 </div>
             `;
             return;
@@ -2339,7 +3644,7 @@ class ClimbingTrainingJournal {
                 ${entry.trainingType && false ? `
                 <div class="entry-section">
                     <h4>🎯 訓練類型</h4>
-                    <p>${entry.trainingType === '攀岩' ? '🧗 攀岩' : '💪 功能訓練'}</p>
+                    <p>${entry.trainingType === '攀岩' ? '🧗 攀岩' : '🏋️ 體能訓練'}</p>
                 </div>
                 ` : ''}
 
@@ -2374,18 +3679,6 @@ class ClimbingTrainingJournal {
                 </div>
                 ` : ''}
 
-                ${(() => {
-                    const hasLegacyBodyState = entry.coreState || entry.legState || entry.shoulderState;
-                    return hasLegacyBodyState && false ? `
-                <div class="entry-section">
-                    <h4>🧠 今日體感</h4>
-                    <p>🔵 核心傳導: <span class="${this.getStatusClass(entry.coreState)}">${entry.coreState || '未填'}</span></p>
-                    <p>🟢 單腳穩定: <span class="${this.getStatusClass(entry.legState)}">${entry.legState || '未填'}</span></p>
-                    <p>🔴 肩胛穩定: <span class="${this.getStatusClass(entry.shoulderState)}">${entry.shoulderState || '未填'}</span></p>
-                    <p>😴 疲勞狀態: ${entry.fatigue}/10</p>
-                </div>
-                ` : '';
-                })()}
 
                 ${entry.exercises && false ? `
                 <div class="entry-section">
@@ -2410,11 +3703,7 @@ class ClimbingTrainingJournal {
                 </div>
                 ` : ''}
 
-                ${this.currentUser === 'owner' && entry.todayCondition ? `
-                <div class="entry-system-echo">
-                    ${this.getEntrySystemEcho(entry.todayCondition)}
-                </div>
-                ` : ''}
+                ${this.renderEchoResponse(entry)}
             </div>
         `;
     }
@@ -2473,6 +3762,9 @@ class ClimbingTrainingJournal {
 
     // 將 Entry 資料填入表單
     populateEntryForm(entry) {
+        // 確保編輯模式顯示所有 todayCondition 選項（包含 exhausted）
+        this.updateTodayConditionOptions();
+
         // 基本欄位
         document.getElementById('date').value = entry.date || '';
         document.getElementById('todayCondition').value = entry.todayCondition || '';
@@ -2511,6 +3803,10 @@ class ClimbingTrainingJournal {
 
         // movement 備註
         document.getElementById('movementNotes').value = entry.movementNotes || '';
+
+        // v0.2-REST-1-1: 編輯 exhausted entry 時設置正確 UI
+        const editTodayCondition = document.getElementById('todayCondition').value;
+        this.toggleExhaustedMode(editTodayCondition);
     }
 
     deleteEntry(index) {
@@ -2524,7 +3820,7 @@ class ClimbingTrainingJournal {
 
     // 清除所有資料
     clearAllData() {
-        if (confirm('確定要清除所有訓練紀錄嗎？此操作無法復原！')) {
+        if (confirm('確定要清除所有生活紀錄嗎？此操作無法復原！')) {
             if (confirm('真的要清除所有資料嗎？請再次確認！')) {
                 // 清除訓練資料
                 this.entries = [];
@@ -2613,7 +3909,7 @@ class ClimbingTrainingJournal {
         ].join('\n');
 
         const blob = new Blob(['﻿' + csvContent], { type: 'text/csv;charset=utf-8;' });
-        const filename = `攀岩訓練日記_${new Date().toISOString().split('T')[0]}.csv`;
+        const filename = `攀岩生活日記_${new Date().toISOString().split('T')[0]}.csv`;
 
         this.downloadFile(blob, filename);
         this.showToast('CSV 檔案已匯出');
@@ -2633,10 +3929,152 @@ class ClimbingTrainingJournal {
         };
 
         const blob = new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' });
-        const filename = `攀岩訓練日記_${new Date().toISOString().split('T')[0]}.json`;
+        const filename = `攀岩生活日記_${new Date().toISOString().split('T')[0]}.json`;
 
         this.downloadFile(blob, filename);
         this.showToast('JSON 檔案已匯出');
+    }
+
+    // 收集完整備份資料
+    collectBackupData() {
+        const backupData = {
+            localStorage: {},
+            sessionStorage: {}
+        };
+
+        // localStorage keys
+        const localStorageKeys = [
+            'climbingTrainingEntries_owner',
+            'climbingTrainingEntries_tester',
+            'climbingPrograms_owner',
+            'climbingPrograms_tester',
+            'climbingMessages_owner',
+            'climbingMessages_tester',
+            'messageUnread_tester',
+            'climbingMessageOnboardingSeen_owner',
+            'climbingMessageOnboardingSeen_tester',
+            'currentUser',
+            'climbingTrainingEntries',
+            'climbingPrograms'
+        ];
+
+        // sessionStorage keys
+        const sessionStorageKeys = [
+            'session_climbingTrainingEntries',
+            'session_climbingPrograms',
+            'session_climbingMessages'
+        ];
+
+        // 讀取 localStorage
+        localStorageKeys.forEach(key => {
+            const value = localStorage.getItem(key);
+            backupData.localStorage[key] = value ? value : null;
+        });
+
+        // 讀取 sessionStorage
+        sessionStorageKeys.forEach(key => {
+            const value = sessionStorage.getItem(key);
+            backupData.sessionStorage[key] = value ? value : null;
+        });
+
+        return backupData;
+    }
+
+    // 建立備份 JSON 格式
+    createBackupJSON() {
+        const backupData = this.collectBackupData();
+
+        // 統計資料
+        let entriesCount = 0;
+        let programsCount = 0;
+        let messagesCount = 0;
+
+        // 計算 entries
+        Object.keys(backupData.localStorage).forEach(key => {
+            if (key.includes('climbingTrainingEntries') && backupData.localStorage[key]) {
+                try {
+                    const entries = JSON.parse(backupData.localStorage[key]);
+                    entriesCount += Array.isArray(entries) ? entries.length : 0;
+                } catch (e) {}
+            }
+        });
+
+        Object.keys(backupData.sessionStorage).forEach(key => {
+            if (key.includes('climbingTrainingEntries') && backupData.sessionStorage[key]) {
+                try {
+                    const entries = JSON.parse(backupData.sessionStorage[key]);
+                    entriesCount += Array.isArray(entries) ? entries.length : 0;
+                } catch (e) {}
+            }
+        });
+
+        // 計算 programs
+        Object.keys(backupData.localStorage).forEach(key => {
+            if (key.includes('climbingPrograms') && backupData.localStorage[key]) {
+                try {
+                    const programs = JSON.parse(backupData.localStorage[key]);
+                    programsCount += Array.isArray(programs) ? programs.length : 0;
+                } catch (e) {}
+            }
+        });
+
+        Object.keys(backupData.sessionStorage).forEach(key => {
+            if (key.includes('climbingPrograms') && backupData.sessionStorage[key]) {
+                try {
+                    const programs = JSON.parse(backupData.sessionStorage[key]);
+                    programsCount += Array.isArray(programs) ? programs.length : 0;
+                } catch (e) {}
+            }
+        });
+
+        // 計算 messages
+        Object.keys(backupData.localStorage).forEach(key => {
+            if (key.includes('climbingMessages') && backupData.localStorage[key]) {
+                try {
+                    const messages = JSON.parse(backupData.localStorage[key]);
+                    messagesCount += Array.isArray(messages) ? messages.length : 0;
+                } catch (e) {}
+            }
+        });
+
+        Object.keys(backupData.sessionStorage).forEach(key => {
+            if (key.includes('climbingMessages') && backupData.sessionStorage[key]) {
+                try {
+                    const messages = JSON.parse(backupData.sessionStorage[key]);
+                    messagesCount += Array.isArray(messages) ? messages.length : 0;
+                } catch (e) {}
+            }
+        });
+
+        const backup = {
+            "backupVersion": "v0.2-S",
+            "exportedAt": new Date().toISOString(),
+            "appName": "Climbing Growth System",
+            "storageType": "localStorage/sessionStorage mixed",
+            "identity": this.currentUser || 'unknown',
+            "data": backupData,
+            "metadata": {
+                "entriesCount": entriesCount,
+                "programsCount": programsCount,
+                "messagesCount": messagesCount,
+                "timestampCoverage": `${entriesCount} entries across all identities`
+            }
+        };
+
+        return backup;
+    }
+
+    // 匯出完整備份
+    exportBackup() {
+        const backupJSON = this.createBackupJSON();
+
+        const blob = new Blob([JSON.stringify(backupJSON, null, 2)], { type: 'application/json' });
+        const identity = this.currentUser || 'unknown';
+        const today = new Date().toISOString().split('T')[0];
+        const filename = `climbing_backup_${identity}_${today}.json`;
+
+        this.downloadFile(blob, filename);
+        this.showToast('完整備份已匯出！');
     }
 
     // 下載檔案
@@ -2681,6 +4119,383 @@ class ClimbingTrainingJournal {
                 }
             }, 300);
         }, 2000);
+    }
+
+        // ============================================
+    // Echo Response System - v0.2-ECHO-4B
+    // ============================================
+
+    // 建立 ECHO_POOLS 常數 - 基於 ECHO_ROUTING_RULES_V01 和 ECHO_STYLE_CHARTER_V01
+    initializeEchoPools() {
+        return {
+            // Life Flow Pools (L1-L3)
+            L1: [
+                "穩穩的，挺好的。",
+                "沒有勉強，真好。",
+                "今天的節奏剛好。",
+                "溫和的一天。",
+                "剛剛好的狀態。",
+                "今天很安心。",
+                "安靜的步調。",
+                "今天沒有硬撐。",
+                "很穩的感覺。",
+                "平靜的時光。"
+            ],
+            L2: [
+                "今天多了一點味道。",
+                "今天留下了一個味道。",
+                "今天記住了一餐。",
+                "今天有留下什麼。",
+                "今天記住了。",
+                "今天多了一些。",
+                "有些東西被保存下來。",
+                "今天留下了印象。",
+                "今天多了一段時間。",
+                "今天有一個片刻被保留下來。"
+            ],
+            L3: [
+                "今天見到了重要的人。",
+                "今天多了一段一起度過的時間。",
+                "有些相遇被記下來了。",
+                "這段時間被保留下來了。",
+                "今天多了一個片段。",
+                "今天做了一些事。",
+                "今天有一段時間。",
+                "今天留下了一些痕跡。",
+                "這一天有了內容。",
+                "今天的頁面有了內容。"
+            ],
+
+            // Easy Flow Pools (E1-E4)
+            E1: [
+                "今天留下了一些痕跡。",
+                "今天有留下腳印。",
+                "今天做了一些事。",
+                "今天有一段時間。",
+                "今天多了一些。",
+                "有些東西被保存下來。",
+                "今天留下了印象。",
+                "今天多了一個小片段。",
+                "這個時刻留在今天裡。",
+                "這一天被記下來了。"
+            ],
+            E2: [
+                "今天有留下什麼。",
+                "今天記住了。",
+                "今天多了一些。",
+                "有些東西被保存下來。",
+                "今天留下了印象。",
+                "今天多了一個片段。",
+                "今天有一段時間。",
+                "今天有一個片刻被保留下來。",
+                "今天的頁面有了內容。",
+                "這個時刻留在今天裡。"
+            ],
+            E3: [
+                "穩穩的，挺好的。",
+                "沒有勉強，真好。",
+                "今天的節奏剛好。",
+                "溫和的一天。",
+                "剛剛好的狀態。",
+                "今天很安心。",
+                "安靜的步調。",
+                "平靜的時光。",
+                "今天沒有硬撐。",
+                "很穩的感覺。"
+            ],
+            E4: [
+                "今天多了一個片段。",
+                "今天有一段時間。",
+                "今天做了一些事。",
+                "今天留下了一些痕跡。",
+                "今天有留下腳印。",
+                "今天多了一些。",
+                "有些東西被保存下來。",
+                "今天有一個片刻被保留下來。",
+                "今天多了一個小片段。",
+                "這一天有了內容。"
+            ],
+
+            // Challenge Flow Pools (C1-C3)
+            C1: [
+                "今天做了一些事。",
+                "今天有一段時間。",
+                "今天留下了一些痕跡。",
+                "今天有留下腳印。",
+                "今天多了一個片段。",
+                "今天多了一些。",
+                "有些東西被保存下來。",
+                "今天的頁面有了內容。",
+                "這個時刻留在今天裡。",
+                "今天多了一個小片段。"
+            ],
+            C2: [
+                "今天有留下什麼。",
+                "今天記住了。",
+                "今天多了一些。",
+                "有些東西被保存下來。",
+                "今天留下了印象。",
+                "今天多了一個片段。",
+                "今天有一段時間。",
+                "今天有一個片刻被保留下來。",
+                "這一天被記下來了。",
+                "這一天有了內容。"
+            ],
+            C3: [
+                "今天留下了一些痕跡。",
+                "今天有留下腳印。",
+                "今天做了一些事。",
+                "今天有一段時間。",
+                "今天多了一些。",
+                "有些東西被保存下來。",
+                "今天記住了。",
+                "今天有留下什麼。",
+                "今天多了一個小片段。",
+                "這個時刻留在今天裡。"
+            ],
+
+            // Fallback Pool (F1)
+            F1: [
+                "今天留下了一些痕跡。",
+                "這一天被記下來了。",
+                "今天的頁面有了內容。",
+                "這個時刻被保存下來。",
+                "今天留下了一個片段。",
+                "這一天多了一行字。",
+                "今天有一些被記錄下來。",
+                "這一天有了內容。",
+                "今天多了一個小片段。",
+                "這個時刻留在今天裡。"
+            ]
+        };
+    }
+
+    // 實作核心 Echo 路由函式
+    routeEchoResponse(entryData) {
+        // 識別 Entry Flow 類型
+        const flowType = this.identifyEntryFlow(entryData);
+
+        // 根據 Flow 類型執行路由規則
+        let pool, category;
+
+        switch (flowType) {
+            case 'life':
+                ({ pool, category } = this.routeLifeFlow(entryData));
+                break;
+            case 'easy':
+                ({ pool, category } = this.routeEasyFlow(entryData));
+                break;
+            case 'challenge':
+                ({ pool, category } = this.routeChallengeFlow(entryData));
+                break;
+            default:
+                pool = 'F1';
+                category = 'fallback';
+        }
+
+        return { pool, category, flowType };
+    }
+
+    // 識別 Entry Flow 類型
+    identifyEntryFlow(entryData) {
+        // Life Flow: 基於 programId 和 todayCondition
+        if (entryData.programId === 'exhausted-reflection' &&
+            entryData.todayCondition === 'exhausted') {
+            return 'life';
+        }
+
+        // Easy Flow: 基於 programId 和特定組合
+        if (entryData.programId === 'easy-reflection' &&
+            entryData.trainingType === '攀岩' &&
+            entryData.todayCondition === 'normal') {
+            return 'easy';
+        }
+
+        // Challenge Flow: 其他所有情況
+        return 'challenge';
+    }
+
+    // Life Flow 路由規則
+    routeLifeFlow(entryData) {
+        const movementNotes = entryData.movementNotes || '';
+
+        // 提取 Life Choice (格式: "選項｜備註" 或單純 "選項")
+        const parts = movementNotes.split('｜');
+        const lifeChoice = parts[0] || '';
+
+        // 規則 L-1: 直接映射
+        if (lifeChoice === "今天沒有硬撐，很穩") {
+            return { pool: 'L1', category: '安穩型' };
+        }
+        if (lifeChoice === "今天有吃到好吃的") {
+            return { pool: 'L2', category: '生活型' };
+        }
+        if (lifeChoice === "今天有見到重要的人") {
+            return { pool: 'L3', category: '陪伴型' };
+        }
+
+        // 規則 L-2: 未選擇 Fallback
+        return { pool: 'F1', category: 'fallback' };
+    }
+
+    // Easy Flow 路由規則
+    routeEasyFlow(entryData) {
+        const movementNotes = entryData.movementNotes || '';
+
+        // 提取 Easy Choice (格式: "選項1、選項2｜備註" 或 "選項1、選項2")
+        const parts = movementNotes.split('｜');
+        const choicesText = parts[0] || '';
+        const easyChoices = choicesText ? choicesText.split('、').map(c => c.trim()) : [];
+
+        // 規則 E-3: 具體判斷邏輯（修正優先順序）
+
+        // 1. E4 平衡型 - >=3 個選項（最高優先）
+        if (easyChoices.length >= 3) {
+            return { pool: 'E4', category: '平衡型' };
+        }
+
+        // 2. E2 觀察型 - 只要包含觀察
+        if (easyChoices.includes("有觀察到新的東西")) {
+            return { pool: 'E2', category: '觀察型' };
+        }
+
+        // 3. E3 恢復型 - 只要包含休息
+        if (easyChoices.includes("有讓自己休息")) {
+            return { pool: 'E3', category: '恢復型' };
+        }
+
+        // 4. E1 累積型 - 其他所有情況
+        return { pool: 'E1', category: '累積型' };
+    }
+
+    // Challenge Flow 路由規則
+    routeChallengeFlow(entryData) {
+        const completion = entryData.completion || '';
+
+        // 規則 C-1: 直接映射
+        if (completion === "all" || completion === "most") {
+            return { pool: 'C1', category: '完成型' };
+        }
+        if (completion === "half") {
+            return { pool: 'C2', category: '持續型' };
+        }
+        if (completion === "little") {
+            return { pool: 'C3', category: '留痕型' };
+        }
+
+        // 規則 C-2: 異常處理
+        return { pool: 'F1', category: 'fallback' };
+    }
+
+    // 從指定回應池隨機選擇一條 Echo
+    selectRandomEcho(poolName) {
+        const echoPools = this.echoPools;
+        const pool = echoPools[poolName];
+
+        if (!pool || !Array.isArray(pool) || pool.length === 0) {
+            // 回應池異常，使用 F1 Fallback
+            const fallbackPool = echoPools['F1'];
+            if (!fallbackPool || fallbackPool.length === 0) {
+                return "今天留下了一些痕跡。"; // 硬編碼安全回應
+            }
+            const randomIndex = Math.floor(Math.random() * fallbackPool.length);
+            return fallbackPool[randomIndex];
+        }
+
+        const randomIndex = Math.floor(Math.random() * pool.length);
+        return pool[randomIndex];
+    }
+
+    // 建立 Echo Response Object（MVP 版本）
+    buildEchoResponse(pool, category, flowType, message, entryData) {
+        return {
+            pool: pool,
+            category: category,
+            message: message,
+            source: flowType,
+            entryId: entryData.timestamp
+        };
+    }
+
+    // 主要 Echo 生成函式 - 整合所有步驟
+    generateEchoResponse(entryData) {
+        try {
+            // 初始化 Echo Pools（如果還沒有）
+            if (!this.echoPools) {
+                this.echoPools = this.initializeEchoPools();
+            }
+
+            // 1. 路由決策
+            const { pool, category, flowType } = this.routeEchoResponse(entryData);
+
+            // 2. 隨機選擇回應
+            const message = this.selectRandomEcho(pool);
+
+            // 3. 建立回應物件
+            const echoResponse = this.buildEchoResponse(pool, category, flowType, message, entryData);
+
+            return echoResponse;
+        } catch (error) {
+            console.error('Echo 生成失敗:', error);
+            // 安全回應
+            return {
+                pool: 'F1',
+                category: 'fallback',
+                message: '今天留下了一些痕跡。',
+                source: 'error',
+                entryId: entryData.timestamp || 'unknown'
+            };
+        }
+    }
+
+    // 取得依時間順序排列的 entries（不修改原陣列）
+    getChronologicalEntries() {
+        return [...this.entries].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    }
+
+    // v0.2-ECHO-PRESENCE-MVP: 判斷是否應該顯示 Echo
+    shouldShowEcho(entry) {
+        // 保護：前3筆記錄一定顯示 Echo（新用戶體驗）
+        const chronologicalEntries = this.getChronologicalEntries();
+        const entryIndex = chronologicalEntries.findIndex(e => e.timestamp === entry.timestamp);
+
+        if (entryIndex !== -1 && entryIndex < 3) {
+            return true;
+        }
+
+        // 確定性隨機：基於 timestamp，相同 entry 永遠相同結果
+        const seed = entry.timestamp % 10000;
+        const pseudoRandom = (seed * 9301 + 49297) % 233280 / 233280;
+
+        // 70% 機率顯示 Echo
+        return pseudoRandom < 0.7;
+    }
+
+    // 渲染 Echo 回應 - 支援新舊 entry 相容性
+    renderEchoResponse(entry) {
+        // v0.2-ECHO-PRESENCE-MVP: 檢查是否應該顯示 Echo
+        if (!this.shouldShowEcho(entry)) {
+            return ''; // 不顯示 Echo
+        }
+
+        let echoResponse = entry.echoResponse;
+
+        // 向後相容：為舊 entry 動態生成 echo response
+        if (!echoResponse) {
+            echoResponse = this.generateEchoResponse(entry);
+            // 不寫回 entry，保持非侵入性
+        }
+
+        // 渲染 Echo 回應
+        if (echoResponse && echoResponse.message) {
+            return `
+                <div class="entry-echo-response">
+                    ${echoResponse.message}
+                </div>
+            `;
+        }
+
+        return '';
     }
 
     // === 留言系統 ===
@@ -2867,17 +4682,23 @@ class ClimbingTrainingJournal {
     // 留言系統 - Onboarding 流程
     // ============================================
 
-    checkFirstTimeOnboarding() {
+    checkFirstTimeOnboarding(wasFirstEntry = null) {
         console.log('[CheckFirstTimeOnboarding]', {
             currentUser: this.currentUser,
             entriesLength: this.entries.length,
+            wasFirstEntry: wasFirstEntry,
             onboardingKey: 'climbingMessageOnboardingSeen_' + this.currentUser,
             alreadySeen: localStorage.getItem('climbingMessageOnboardingSeen_' + this.currentUser)
         });
 
-        if (this.entries.length === 1 &&
+        const onboardingKey = 'climbingMessageOnboardingSeen_' + this.currentUser;
+
+        if (wasFirstEntry === true &&
             this.currentUser !== 'guest' &&
-            !localStorage.getItem('climbingMessageOnboardingSeen_' + this.currentUser)) {
+            !localStorage.getItem(onboardingKey)) {
+
+            // 立刻寫入 seen flag，避免重複觸發
+            localStorage.setItem(onboardingKey, 'true');
 
             setTimeout(() => {
                 this.showOnboarding();
@@ -3871,6 +5692,18 @@ window.debugMessageSystem = function() {
 };
 
 document.head.appendChild(style);
+
+// 全域測試函式：切換用戶身份
+window.switchToUser = function(userType) {
+    if (window.climbingApp) {
+        window.climbingApp.setCurrentUser(userType);
+        window.climbingApp.loadFromStorage();
+        window.climbingApp.renderEntries();
+        console.log(`✅ 已切換到 ${userType} 身份`);
+    } else {
+        console.log('❌ climbingApp 尚未初始化');
+    }
+};
 
 // 初始化應用程式
 document.addEventListener('DOMContentLoaded', () => {

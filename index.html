@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🧗‍♂️ 攀岩訓練日記</title>
+    <title>🧗‍攀岩生活日記 |陪自己走一段</title>
     <link rel="stylesheet" href="style.css">
 
     <!-- Firebase SDK -->
@@ -52,8 +52,8 @@
         <div class="auth-container">
             <h3 id="authTitle">進入開發者模式</h3>
             <div class="auth-form">
-                <input type="text" id="authUsername" placeholder="開發者代碼">
-                <input type="password" id="authPassword" placeholder="測試代碼">
+                <input type="text" id="authUsername" placeholder="Email" readonly>
+                <input type="password" id="authPassword" placeholder="密碼">
             </div>
             <div class="auth-buttons">
                 <button id="authSubmit" class="btn btn-primary">進入</button>
@@ -71,16 +71,39 @@
 
         <!-- 頂部標題 -->
         <header class="app-header">
-            <h1>🧗‍♂️ 攀岩訓練日記</h1>
-            <p>每日 movement 觀察與訓練記錄</p>
+            <h1>🧗‍攀岩生活日記</h1>
+            <p>陪自己走一段</p>
         </header>
+
+        <!-- 首頁三入口區塊 -->
+        <div id="homeEntryPortal" class="home-entry-portal">
+            <h2 class="portal-title">今天想怎麼過？</h2>
+            <div class="entry-flow-buttons">
+                <button id="challengeFlowBtn" class="flow-btn challenge-btn">
+                    <span class="flow-emoji">💪</span>
+                    <span class="flow-text">想挑戰一下</span>
+                </button>
+                <button id="easyFlowBtn" class="flow-btn easy-btn">
+                    <span class="flow-emoji">🌿</span>
+                    <span class="flow-text">慢慢來就好</span>
+                </button>
+                <button id="lifeFlowBtn" class="flow-btn life-btn">
+                    <span class="flow-emoji">☕</span>
+                    <span class="flow-text">好好過生活</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- 定位文案 -->
+        <div class="home-positioning-copy">
+            <p>不是每天都要訓練。</p>
+            <p>有些日子在成長，<br>有些日子在恢復，<br>有些日子只是好好生活。</p>
+            <p>留下今天的痕跡就好。</p>
+        </div>
 
         <!-- 控制面板 -->
         <div class="controls">
-            <button id="newEntry" class="btn btn-primary">📝 新增今日紀錄</button>
-            <button id="exportCSV" class="btn btn-secondary">📊 匯出 CSV</button>
-            <button id="exportJSON" class="btn btn-secondary">💾 匯出 JSON</button>
-            <button id="clearAll" class="btn btn-danger">🗑️ 清除所有資料</button>
+            <button id="newEntry" class="btn btn-primary hidden-entry-btn">📝 新增今日紀錄</button>
         </div>
 
         <!-- 紀錄卡片區域 -->
@@ -88,10 +111,51 @@
             <!-- 訓練紀錄卡片會在這裡動態生成 -->
         </div>
 
+        <!-- 資料管理與進階操作 -->
+        <div class="data-management-section">
+            <h3 class="collapsible-header">📊 資料管理與進階操作 <span class="toggle-hint">(點擊展開)</span></h3>
+            <div class="collapsible-content" style="display: none;">
+                <!-- 資料匯出 -->
+                <div class="data-export-section">
+                    <h4>📤 資料匯出</h4>
+                    <div class="export-buttons">
+                        <button id="exportCSV" class="btn btn-secondary">📊 匯出 CSV</button>
+                        <button id="exportJSON" class="btn btn-secondary">📄 匯出 JSON</button>
+                        <button id="exportBackup" class="btn btn-secondary">💾 匯出完整備份</button>
+                    </div>
+                </div>
+
+                <!-- 進階操作 -->
+                <div class="advanced-operations-section">
+                    <h4>⚙️ 進階操作</h4>
+                    <div class="advanced-buttons">
+                        <button id="cloudPreviewBtn" class="btn btn-secondary">📖 預覽雲端紀錄</button>
+                        <button id="clearAll" class="btn btn-danger">🗑️ 清除所有資料</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 雲端紀錄預覽 (開發者專用) -->
+        <div id="cloudPreviewSection" class="cloud-preview-section" style="display: none;">
+            <div class="cloud-preview-header">
+                <h4>☁️ 雲端紀錄預覽 <span class="dev-tool-label">(開發者工具)</span></h4>
+                <button id="closeCloudPreview" class="close-btn">✕ 關閉</button>
+            </div>
+
+            <div class="cloud-preview-info">
+                <p id="cloudPreviewInfo">📍 來源：Supabase | 👤 身份：owner | 📅 最近10筆</p>
+            </div>
+
+            <div id="cloudEntriesList" class="cloud-entries-list">
+                <!-- 雲端紀錄卡片將在這裡動態生成 -->
+            </div>
+        </div>
+
         <!-- 新增紀錄表單 (隱藏) -->
         <div id="entryForm" class="form-overlay" style="display: none;">
             <div class="form-card">
-                <h2>📝 新增訓練紀錄</h2>
+                <h2>📝 新增生活紀錄</h2>
 
                 <form id="trainingForm">
                     <!-- 基本資訊 -->
@@ -114,11 +178,11 @@
                             <label>今日訓練類型</label>
                             <div class="radio-group">
                                 <label><input type="radio" name="trainingType" value="攀岩"> 🧗 攀岩</label>
-                                <label><input type="radio" name="trainingType" value="功能訓練"> 💪 功能訓練</label>
+                                <label><input type="radio" name="trainingType" value="功能訓練"> 🏋️ 體能訓練</label>
                             </div>
                         </div>
                         <div class="form-group journal-main">
-                            <label>今日Program</label>
+                            <label>今天的課表</label>
                             <select id="programSelect">
                                 <option value="">請先選擇訓練類型</option>
                             </select>
@@ -141,6 +205,52 @@
                         <div class="form-group journal-main">
                             <label>movement備註</label>
                             <input type="text" id="movementNotes" placeholder="一句話記錄今天的 movement 感覺">
+                        </div>
+
+                        <!-- 非常疲憊簡化紀錄模式 -->
+                        <div id="exhaustedModeSection" class="exhausted-mode" style="display: none;">
+                            <div class="exhausted-header">
+                                <p>今天最想記住的是什麼呢？</p>
+                            </div>
+
+                            <div class="exhausted-options">
+                                <div class="form-group">
+                                    <label><input type="radio" name="exhaustedChoice" value="今天沒有硬撐，很穩"> 今天沒有硬撐，很穩</label>
+                                    <label><input type="radio" name="exhaustedChoice" value="今天有吃到好吃的"> 今天有吃到好吃的</label>
+                                    <label><input type="radio" name="exhaustedChoice" value="今天有見到重要的人"> 今天有見到重要的人</label>
+                                </div>
+                            </div>
+
+                            <div class="exhausted-note">
+                                <div class="form-group">
+                                    <label for="exhaustedNote">也可以留下一句自己的話</label>
+                                    <input type="text" id="exhaustedNote" placeholder="想留下什麼都可以，一句就好。">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 慢慢來簡化紀錄模式 -->
+                        <div id="easyModeSection" class="easy-mode" style="display: none;">
+                            <div class="easy-header">
+                                <h3>🌿 今天想留什麼痕跡？</h3>
+                            </div>
+
+                            <div class="easy-options">
+                                <div class="form-group">
+                                    <label><input type="checkbox" name="easyChoice" value="有去岩館"> 有去岩館</label>
+                                    <label><input type="checkbox" name="easyChoice" value="有動一點身體"> 有動一點身體</label>
+                                    <label><input type="checkbox" name="easyChoice" value="有練習一個小技巧"> 有練習一個小技巧</label>
+                                    <label><input type="checkbox" name="easyChoice" value="有讓自己休息"> 有讓自己休息</label>
+                                    <label><input type="checkbox" name="easyChoice" value="有觀察到新的東西"> 有觀察到新的東西</label>
+                                </div>
+                            </div>
+
+                            <div class="easy-note">
+                                <div class="form-group">
+                                    <label for="easyNote">今天印象最深的是什麼？</label>
+                                    <input type="text" id="easyNote" placeholder="一句話就好...">
+                                </div>
+                            </div>
                         </div>
 
                         <!-- 隱藏的舊欄位以保持相容性 -->
@@ -259,7 +369,7 @@
 
                     <!-- 訓練內容 - 隱藏詳細記錄區塊 -->
                     <div class="form-section journal-primary" style="display: none;">
-                        <h3>📝 今日訓練記錄</h3>
+                        <h3>📝 今日生活記錄</h3>
                         <div class="form-group journal-main">
                             <label>主要訓練與觀察</label>
                             <textarea id="exercises" class="journal-textarea" placeholder="今天做了什麼訓練？有什麼身體感受？&#10;&#10;例如：&#10;- 單邊引體練習，右邊比較穩&#10;- 壓腳練習時核心感覺不錯&#10;- 攀岩時發現肩膀比較不會聳...&#10;&#10;(可選擇上方模板參考)"></textarea>
@@ -334,7 +444,8 @@
 
                 <!-- Program Builder - 獨立表單區塊 -->
                 <div class="form-section background-reference collapsed" style="margin-top: 2rem;">
-                    <h3 class="collapsible-header">⚙️ Program 建立器 <span class="toggle-hint">(點擊展開)</span></h3>
+                    <h3 class="collapsible-header">⚙️ 自訂課表 <span class="toggle-hint">(點擊展開)</span></h3>
+                    <p style="font-size: 0.9em; color: #666; margin: 0.5rem 0;">需要調整訓練項目時再打開。</p>
                     <div class="collapsible-content" style="display: none;">
                         <form id="programBuilderForm">
                             <div class="form-group">
@@ -346,7 +457,7 @@
                                 <label>Program 類型</label>
                                 <div class="radio-group">
                                     <label><input type="radio" name="programType" value="攀岩"> 🧗 攀岩</label>
-                                    <label><input type="radio" name="programType" value="功能訓練"> 💪 功能訓練</label>
+                                    <label><input type="radio" name="programType" value="功能訓練"> 🏋️ 體能訓練</label>
                                 </div>
                             </div>
 
@@ -360,7 +471,7 @@
                             <div class="form-group">
                                 <label>Movement Items (最多5個)</label>
                                 <p style="font-size: 0.85rem; color: #888; margin-bottom: 0.8rem;">
-                                    💡 請輸入 movement 層級項目，例如：高腳、張力、route reading、lock off
+                                    💡 請輸入 movement 層級項目，例如：單邊划船、RKC 平板撐、讀線、指力
                                 </p>
                                 <div class="program-items-container">
                                     <input type="text" id="programItem1" placeholder="movement item 1" class="program-item-input">
@@ -396,6 +507,102 @@
                 </div>
 
             </div>
+        </div>
+    </div>
+
+    <!-- Life Entry Form (獨立的好好過生活表單) -->
+    <div id="lifeEntryForm" class="form-overlay" style="display: none;">
+        <div class="form-card">
+            <h2>☕ 好好過生活</h2>
+
+            <form id="lifeForm">
+                <!-- 基本資訊 -->
+                <div class="form-section">
+                    <div class="form-group">
+                        <label>日期</label>
+                        <input type="date" id="lifeDate" required>
+                    </div>
+                </div>
+
+                <!-- Life 簡化紀錄模式 -->
+                <div class="form-section">
+                    <div class="life-mode">
+                        <div class="life-header">
+                            <p>今天最想記住的是什麼呢？</p>
+                        </div>
+
+                        <div class="life-options">
+                            <div class="form-group">
+                                <label><input type="radio" name="lifeChoice" value="今天沒有硬撐，很穩"> 今天沒有硬撐，很穩</label>
+                                <label><input type="radio" name="lifeChoice" value="今天有吃到好吃的"> 今天有吃到好吃的</label>
+                                <label><input type="radio" name="lifeChoice" value="今天有見到重要的人"> 今天有見到重要的人</label>
+                            </div>
+                        </div>
+
+                        <div class="life-note">
+                            <div class="form-group">
+                                <label for="lifeNote">也可以留下一句自己的話</label>
+                                <input type="text" id="lifeNote" placeholder="想留下什麼都可以，一句就好。">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Life Form 按鈕 -->
+                <div class="form-buttons">
+                    <button type="submit" class="btn btn-primary">💾 儲存紀錄</button>
+                    <button type="button" id="cancelLifeForm" class="btn btn-secondary">❌ 取消</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Easy Entry Form (獨立的慢慢來表單) -->
+    <div id="easyEntryForm" class="form-overlay" style="display: none;">
+        <div class="form-card">
+            <h2>🌿 慢慢來就好</h2>
+
+            <form id="easyForm">
+                <!-- 基本資訊 -->
+                <div class="form-section">
+                    <div class="form-group">
+                        <label>日期</label>
+                        <input type="date" id="easyDate" required>
+                    </div>
+                </div>
+
+                <!-- Easy 簡化紀錄模式 -->
+                <div class="form-section">
+                    <div class="easy-mode">
+                        <div class="easy-header">
+                            <h3>🌿 今天想留什麼痕跡？</h3>
+                        </div>
+
+                        <div class="easy-options">
+                            <div class="form-group">
+                                <label><input type="checkbox" name="easyChoice" value="有去岩館"> 有去岩館</label>
+                                <label><input type="checkbox" name="easyChoice" value="有動一點身體"> 有動一點身體</label>
+                                <label><input type="checkbox" name="easyChoice" value="有練習一個小技巧"> 有練習一個小技巧</label>
+                                <label><input type="checkbox" name="easyChoice" value="有讓自己休息"> 有讓自己休息</label>
+                                <label><input type="checkbox" name="easyChoice" value="有觀察到新的東西"> 有觀察到新的東西</label>
+                            </div>
+                        </div>
+
+                        <div class="easy-note">
+                            <div class="form-group">
+                                <label for="easyNote">今天印象最深的是什麼？</label>
+                                <input type="text" id="easyNote" placeholder="一句話就好...">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Easy Form 按鈕 -->
+                <div class="form-buttons">
+                    <button type="submit" class="btn btn-primary">💾 儲存紀錄</button>
+                    <button type="button" id="cancelEasyForm" class="btn btn-secondary">❌ 取消</button>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -450,6 +657,13 @@
         💌
     </div>
 
+    <!-- Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <!-- Supabase Client Setup -->
+    <script src="supabaseClient.js"></script>
+
+    <!-- Main App -->
     <script src="app.js"></script>
 </body>
 </html>
