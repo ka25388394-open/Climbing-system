@@ -4486,6 +4486,61 @@ Runtime trace 發現 `climbingPrograms_owner` 內同時存在舊版與新版 pro
 3. ✅ 核心項目僅包含：RKC 平板撐、下腹抬腿、單邊農夫走路、熊爬
 4. ✅ 不再出現：攀岩技術、攀岩整合、死蟲式、核心穩定、lock off
 
+---
+
+## 🚀 Release 1.2 - Program System Cleanup Day (2026-05-27)
+
+### 🎯 核心目標
+**建立乾淨、唯一、穩定的 Program Runtime System**
+
+解決 runtime state 被舊 cache 污染問題，確立唯一 canonical programs 作為所有 UI、runtime、localStorage、render、initialization 的唯一標準。
+
+### ✅ 主要完成項目
+
+#### 📋 **PROGRAM_CACHE_VERSION 系統**
+- ✅ **app.js:94** - 新增 `static PROGRAM_CACHE_VERSION = 'v1.2'`
+- ✅ **app.js:252-274** - 新增 `enforceCanonicalProgramVersion()` 強制版本檢查
+- ✅ **app.js:179** - 整合到 `initializeApp()` 初始化流程
+
+#### 🎯 **Canonical Programs 確立**
+- ✅ **app.js:1518-1575** - 確認 defaultPrograms 完全符合 canonical 規格
+- ✅ **詳細註解** - 明確標記 canonical 版本與禁止項目
+- ✅ **唯一正確版本** - 消除所有版本模糊性
+
+### 📊 **Canonical Programs 最終規格**
+
+#### **攀岩**
+- **技術**: 讀線, 重心轉移, 腳法, 新動作
+- **體能**: 指力, 拉力, 張力, 耐力
+
+#### **功能訓練**  
+- **核心**: RKC 平板撐, 下腹抱腿, 單邊農夫走路, 熊爬
+- **肩胛穩定**: 單邊划船, 引體向上, 中下斜方, 後三角
+- **單腳踩點**: 單腳 RDL, 分腿蹲, 側向移動, 內收肌
+
+### 🚫 **永久禁止項目**
+- ❌ **舊分類名**: 攀岩技術, 攀岩整合  
+- ❌ **舊核心項目**: 死蟲式, 核心穩定, 張力傳導
+- ❌ **舊肩胛項目**: 肩胛控制, lock off
+
+### 🛡️ **版本強制保護機制**
+- **自動檢查**: 每次 `initializeApp()` 執行版本檢查
+- **強制清理**: 版本不符自動清除 `climbingPrograms_owner/tester`  
+- **版本標記**: 設定 `programCacheVersion_xxx = v1.2`
+- **防污染**: 確保只載入 canonical defaultPrograms
+
+### ✅ **驗收確認**
+1. ✅ **版本系統**: PROGRAM_CACHE_VERSION v1.2 建立並運作
+2. ✅ **Canonical Programs**: 完全符合最終規格
+3. ✅ **強制清理**: 自動清除混合舊版 cache
+4. ✅ **Runtime 純淨**: 不再有 runtime merge 污染
+5. ✅ **唯一標準**: 建立所有 component 唯一參考標準
+
+### 🎉 **Release 1.2 成果**
+**Problem Solved**: Runtime state 舊 cache 污染問題根治  
+**Foundation**: 建立 Program Runtime System 的穩定基礎  
+**Future-Proof**: 版本控制系統防止未來污染
+
 #### 📊 修復驗證
 - ✅ **修改前檢查** - `請選擇Program` 存在於 app.js:2684
 - ✅ **修改後確認** - `請選擇課表` 取代原文案

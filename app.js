@@ -89,6 +89,9 @@ const IDENTITY_CONFIG = {
 
 // 攀岩生活日記 - 功能邏輯
 class ClimbingTrainingJournal {
+    // Program Cache Version - Release 1.2 Program System Cleanup
+    static PROGRAM_CACHE_VERSION = 'v1.2';
+
     constructor() {
         // 初始化身份系統
         this.currentUser = null;
@@ -146,6 +149,9 @@ class ClimbingTrainingJournal {
     initializeApp() {
         // 初始化雲端備份
         this.cloudBackup = new CloudBackup(this.userId);
+
+        // Release 1.2: 強制執行 canonical program version
+        this.enforceCanonicalProgramVersion();
 
         // 清理混合舊/新版 program cache
         this.cleanupMixedProgramCache();
@@ -241,6 +247,34 @@ class ClimbingTrainingJournal {
 
             console.log('資料遷移完成');
         }
+    }
+
+    // Release 1.2: Program Cache Version 檢查與強制更新
+    enforceCanonicalProgramVersion() {
+        const currentVersion = ClimbingTrainingJournal.PROGRAM_CACHE_VERSION;
+        const userTypes = ['owner', 'tester'];
+
+        console.log(`🔧 Program Cache Version Check: ${currentVersion}`);
+
+        userTypes.forEach(userType => {
+            const versionKey = `programCacheVersion_${userType}`;
+            const programKey = `climbingPrograms_${userType}`;
+            const storedVersion = localStorage.getItem(versionKey);
+
+            if (storedVersion !== currentVersion) {
+                console.log(`📋 Program Cache 版本過期 (${userType}): ${storedVersion} → ${currentVersion}`);
+
+                // 清除舊版 program cache
+                localStorage.removeItem(programKey);
+
+                // 設定新版版本標記
+                localStorage.setItem(versionKey, currentVersion);
+
+                console.log(`✅ Program Cache 已更新為 ${currentVersion} (${userType})`);
+            } else {
+                console.log(`✅ Program Cache 版本正確: ${currentVersion} (${userType})`);
+            }
+        });
     }
 
     // 清理混合舊/新版 Program Cache
@@ -1481,43 +1515,48 @@ class ClimbingTrainingJournal {
         // 載入目前已存在的 Programs
         const savedPrograms = this.loadPrograms();
 
-        // 固定的 5 個預設 Programs（基於既有8週課表 + 訓練模板）
+        // Release 1.2: CANONICAL PROGRAMS - 唯一正確版本
+        // 這些是經過 Release 1.2 Program System Cleanup 確認的 canonical programs
+        // 任何 runtime state、UI render、localStorage 都必須以此為準
         const defaultPrograms = [
+            // === 功能訓練 - Canonical Programs ===
             {
-                id: "program_core",
+                id: "program_core", // CANONICAL: 核心訓練
                 name: "核心",
                 type: "功能訓練",
                 category: "核心",
-                items: ["RKC 平板撐", "下腹抬腿", "單邊農夫走路", "熊爬"],
+                items: ["RKC 平板撐", "下腹抬腿", "單邊農夫走路", "熊爬"], // 不包含"死蟲式"
                 createdAt: new Date().toISOString()
             },
             {
-                id: "program_shoulder",
+                id: "program_shoulder", // CANONICAL: 肩胛穩定
                 name: "肩胛穩定",
                 type: "功能訓練",
                 category: "肩胛穩定",
-                items: ["單邊划船", "引體向上", "中下斜方", "後三角"],
+                items: ["單邊划船", "引體向上", "中下斜方", "後三角"], // 不包含"肩胛控制","lock off"
                 createdAt: new Date().toISOString()
             },
             {
-                id: "program_leg",
+                id: "program_leg", // CANONICAL: 單腳踩點
                 name: "單腳踩點",
                 type: "功能訓練",
                 category: "單腳踩點",
                 items: ["單腳 RDL", "分腿蹲", "側向移動", "內收肌"],
                 createdAt: new Date().toISOString()
             },
+
+            // === 攀岩 - Canonical Programs ===
             {
-                id: "program_climbing_tech",
-                name: "技術",
+                id: "program_climbing_tech", // CANONICAL: 攀岩技術 → 技術
+                name: "技術", // 不是"攀岩技術"
                 type: "攀岩",
                 category: "攀岩",
                 items: ["讀線", "重心轉移", "腳法", "新動作"],
                 createdAt: new Date().toISOString()
             },
             {
-                id: "program_climbing_integration",
-                name: "體能",
+                id: "program_climbing_integration", // CANONICAL: 攀岩整合 → 體能
+                name: "體能", // 不是"攀岩整合"
                 type: "攀岩",
                 category: "攀岩",
                 items: ["指力", "拉力", "張力", "耐力"],
