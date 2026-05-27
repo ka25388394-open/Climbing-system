@@ -4608,3 +4608,131 @@ Runtime trace 發現 `climbingPrograms_owner` 內同時存在舊版與新版 pro
 **Implementation:** Method A+ 輕量實作成功
 
 ---
+
+## 2026-05-27 - Release 1.2 → 1.2.1 Stabilization
+
+### 🎯 今日目標
+- [x] 完成 Release 1.2.1 穩定化
+- [x] 修正 tester display name 後的 JavaScript 錯誤
+- [x] 實作 Challenge Flow 必填欄位驗證
+- [x] 修正空資料匯出問題
+- [x] 正式部署到 Vercel
+
+### ✅ 完成項目
+
+**上午 - BUG-IDENTITY-CLICK-1 修正**
+- ✅ 修正 JavaScript 語法錯誤 - 重複 `const testerName` 宣告
+- ✅ 修正身份選擇器點擊無反應問題
+- ✅ 確認 window.climbingApp 正確初始化
+
+**上午 - BUG-IDENTITY-POSTSUBMIT-1 修正**
+- ✅ 修正 `wasFirstEntry` scope 錯誤 - 移到函式開頭宣告
+- ✅ 修正三個 submit functions 的變數作用域問題
+- ✅ 確保 setTimeout 回調可正確存取變數
+
+**下午 - BUG-SUBMIT-2 必填欄位驗證**
+- ✅ 實作 `validateChallengeForm()` 驗證函式
+- ✅ 實作 `highlightMissingFields()` 欄位高亮
+- ✅ 新增 CSS `.field-error` 樣式 - 淡紅邊框 + 微搖動畫
+- ✅ 整合到 `handleFormSubmit()` 開頭進行驗證
+- ✅ 修正 completion fallback 從 `''` 改為 `'half'`
+- ✅ 新增 Supabase 約束驗證保護層
+
+**下午 - BUG-EXPORT-EMPTY-1 修正**
+- ✅ 修正三個匯出函式的空資料處理
+- ✅ 將 `alert()` 改為溫和的 `showToast()` 提醒
+- ✅ 統一使用「目前還沒有紀錄可以匯出」訊息
+
+**晚上 - Release 1.2.1 正式部署**
+- ✅ Git commit: `a9f6c5e` - release: tester display name and submit validation v1.2.1
+- ✅ Push 到 main branch 成功
+- ✅ Vercel auto-deployment 完成
+- ✅ 線上驗收準備完成
+
+### 📂 修改檔案
+- `app.js` - 新增驗證函式、修正 scope bug、export 保護
+- `style.css` - 新增 `.field-error` 驗證樣式
+- `index.html` - tester display name 輸入欄位 (已完成)
+- `docs/DEV_LOG_V01.md` - 開發日誌更新
+- `docs/IDENTITY_LIGHT_INPUT_PLAN_V01.md` - 身份系統規劃文檔
+
+### 🐛 修正問題統計
+
+**JavaScript Errors:**
+- 修正 `testerName` 重複宣告語法錯誤
+- 修正 `wasFirstEntry` undefined scope 錯誤 (3處)
+
+**Supabase Constraint Violations:**
+- 阻止 `training_type` 空字串送到 Supabase (constraint: entries_valid_training_type)
+- 阻止 `completion` 空字串送到 Supabase (constraint: entries_valid_completion)
+
+**UX Improvements:**
+- Challenge Flow 必填驗證 - 防止無效提交
+- 空匯出防護 - 防止卡住或無反應
+- 溫和錯誤提示 - 改善使用者體驗
+
+### 🎯 技術實作重點
+
+#### 必填欄位驗證系統
+```javascript
+// 三個必填欄位檢查
+validateChallengeForm() {
+    - trainingType (radio group)
+    - programSelect (select dropdown) 
+    - completion (radio group)
+}
+
+// 視覺回饋
+highlightMissingFields() {
+    - 新增 .field-error class
+    - 淡紅邊框 + 背景
+    - subtle-shake 動畫
+    - 使用者重選時自動清除
+}
+```
+
+#### Supabase 約束保護
+```javascript
+// 雙層防護
+1. 前端驗證 - 阻止空值提交
+2. 轉換函式 - 確保有效 completion/training_type 值
+```
+
+### 🚀 Release 1.2.1 內容總結
+
+**Release 1.2 Foundation:**
+- PROGRAM_CACHE_VERSION v1.2 系統
+- Canonical Programs 建立
+- Runtime state 污染清理
+
+**Release 1.2.1 Stabilization:**
+- Tester Display Name 功能
+- Submit Flow 穩定化
+- 必填欄位驗證
+- 空資料匯出防護
+- JavaScript 錯誤修正
+
+### 🔒 安全確認
+- ✅ 只在 `Climbing_Training_App/` 內作業
+- ✅ 沒有碰 Pathly 專案
+- ✅ 保持 Supabase schema 不變
+- ✅ 保持 entries 資料結構不變
+- ✅ 保持 cloud sync 架構不變
+- ✅ 保持 owner/tester/guest 身份邏輯不變
+
+### 📋 系統狀態
+
+**Production Status:** v1.2.1 Stable Beta  
+**Deployment:** https://climbing-system.vercel.app  
+**Ready for:** 朋友測試階段
+
+**核心穩定性達成：**
+- 🟢 Runtime 可預測
+- 🟢 Deployment 一致 
+- 🟢 Validation boundary
+- 🟢 Identity abstraction
+- 🟢 Stable beta 結構
+
+**系統開始具備真正的生產穩定性。**
+
+---
