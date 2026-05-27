@@ -96,6 +96,14 @@ class ClimbingTrainingJournal {
         this.newMessageTimestamps = [];
         this.isAuthenticating = false; // 防重複登入提交
         this.currentEntryFlow = null; // 當前入口流程
+
+        console.log('TRACE CONSTRUCTOR', {
+            currentUser: this.currentUser,
+            programs: this.programs,
+            programsByType: this.programsByType,
+            localPrograms: localStorage.getItem('climbingPrograms_owner')
+        });
+
         this.initializeIdentity();
     }
 
@@ -138,6 +146,9 @@ class ClimbingTrainingJournal {
     initializeApp() {
         // 初始化雲端備份
         this.cloudBackup = new CloudBackup(this.userId);
+
+        // 清理混合舊/新版 program cache
+        this.cleanupMixedProgramCache();
 
         this.entries = [];
         this.trainingTemplates = this.initializeTemplates();
@@ -204,6 +215,13 @@ class ClimbingTrainingJournal {
         const oldEntries = localStorage.getItem('climbingTrainingEntries');
         const oldPrograms = localStorage.getItem('climbingPrograms');
 
+        console.log('TRACE MIGRATE_LEGACY_DATA', {
+            currentUser: this.currentUser,
+            programs: this.programs,
+            programsByType: this.programsByType,
+            localPrograms: localStorage.getItem('climbingPrograms_owner')
+        });
+
         if (oldEntries || oldPrograms) {
             console.log('遷移舊資料到 owner 帳號...');
 
@@ -223,6 +241,66 @@ class ClimbingTrainingJournal {
 
             console.log('資料遷移完成');
         }
+    }
+
+    // 清理混合舊/新版 Program Cache
+    cleanupMixedProgramCache() {
+        const oldProgramIndicators = [
+            '攀岩技術',
+            '攀岩整合',
+            '死蟲式',
+            '核心穩定',
+            '張力傳導',
+            '肩胛控制',
+            'lock off'
+        ];
+
+        const userTypes = ['owner', 'tester'];
+
+        userTypes.forEach(userType => {
+            const key = `climbingPrograms_${userType}`;
+            const stored = localStorage.getItem(key);
+
+            if (!stored) return;
+
+            try {
+                const programs = JSON.parse(stored);
+                let hasOldPrograms = false;
+
+                // 檢查是否包含舊版 program names 或 items
+                if (Array.isArray(programs)) {
+                    // 新格式：array of program objects
+                    hasOldPrograms = programs.some(program =>
+                        oldProgramIndicators.some(indicator =>
+                            program.name?.includes(indicator) ||
+                            (program.items && program.items.some(item => item.includes(indicator)))
+                        )
+                    );
+                } else if (typeof programs === 'object') {
+                    // 舊格式：nested object by type
+                    for (const [type, programList] of Object.entries(programs)) {
+                        if (Array.isArray(programList)) {
+                            hasOldPrograms = programList.some(program =>
+                                oldProgramIndicators.some(indicator =>
+                                    program.name?.includes(indicator) ||
+                                    (program.items && program.items.some(item => item.includes(indicator)))
+                                )
+                            );
+                            if (hasOldPrograms) break;
+                        }
+                    }
+                }
+
+                if (hasOldPrograms) {
+                    console.log(`🧹 清理混合舊版 program cache: ${key}`);
+                    localStorage.removeItem(key);
+                }
+
+            } catch (error) {
+                console.error(`解析 ${key} 時發生錯誤，清理該 cache:`, error);
+                localStorage.removeItem(key);
+            }
+        });
     }
 
     // 顯示身份選擇器
@@ -931,6 +1009,13 @@ class ClimbingTrainingJournal {
         localStorage.setItem('currentUser', identity);
         this.userId = this.getUserIdForFirebase();
 
+        console.log('TRACE SET_CURRENT_USER', {
+            currentUser: this.currentUser,
+            programs: this.programs,
+            programsByType: this.programsByType,
+            localPrograms: localStorage.getItem('climbingPrograms_owner')
+        });
+
         // 更新雲端預覽按鈕可見性
         this.updateCloudPreviewButtonVisibility();
     }
@@ -1297,7 +1382,17 @@ class ClimbingTrainingJournal {
             const key = this.getStorageKey('climbingPrograms');
             const storage = this.getStorage();
             const stored = storage.getItem(key);
-            return JSON.parse(stored || '[]');
+            const result = JSON.parse(stored || '[]');
+
+            console.log('TRACE LOAD_PROGRAMS', {
+                currentUser: this.currentUser,
+                programs: this.programs,
+                programsByType: this.programsByType,
+                localPrograms: localStorage.getItem('climbingPrograms_owner'),
+                loadedData: result
+            });
+
+            return result;
         } catch (error) {
             console.error('載入 Programs 時發生錯誤:', error);
             return [];
@@ -1443,8 +1538,18 @@ class ClimbingTrainingJournal {
             this.savePrograms(mergedPrograms);
         }
 
+        const result = this.convertProgramsToOldFormat(mergedPrograms);
+
+        console.log('TRACE INITIALIZE_PROGRAMS_BY_TYPE', {
+            currentUser: this.currentUser,
+            programs: this.programs,
+            programsByType: result,
+            localPrograms: localStorage.getItem('climbingPrograms_owner'),
+            mergedPrograms: mergedPrograms
+        });
+
         // 返回舊格式以保持相容性
-        return this.convertProgramsToOldFormat(mergedPrograms);
+        return result;
     }
 
     // 舊版 loadPrograms 已移除 - 統一使用身份分離版本 (line 385-395)
@@ -1943,6 +2048,13 @@ class ClimbingTrainingJournal {
 
     // 初始化事件監聽器
     initializeEventListeners() {
+        console.log('TRACE INITIALIZE_EVENT_LISTENERS', {
+            currentUser: this.currentUser,
+            programs: this.programs,
+            programsByType: this.programsByType,
+            localPrograms: localStorage.getItem('climbingPrograms_owner')
+        });
+
         // 新增紀錄按鈕
         document.getElementById('newEntry').addEventListener('click', () => {
             this.showForm();
@@ -2673,6 +2785,15 @@ class ClimbingTrainingJournal {
 
         const { includeArchived = false } = options;
         let programs = this.programsByType[trainingType];
+
+        console.log('TRACE UPDATE_PROGRAM_OPTIONS', {
+            currentUser: this.currentUser,
+            programs: this.programs,
+            programsByType: this.programsByType,
+            localPrograms: localStorage.getItem('climbingPrograms_owner'),
+            trainingType: trainingType,
+            programsForType: programs
+        });
 
         // v0.2-P-4-2: 相容層過濾 archived Program (預備未來封存功能)
         if (!includeArchived) {

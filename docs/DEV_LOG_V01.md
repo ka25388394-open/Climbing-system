@@ -4455,6 +4455,37 @@ Owner 用戶每次重開頁面後，程式選擇又回到舊版「請選擇Progr
 3. ✅ Program 選擇顯示「請選擇課表」而非「請選擇Program」
 4. ✅ tester/guest 用戶不受影響
 
+---
+
+### 🔧 Hotfix 1.1.3 - Clean Mixed Old/New Program Cache (2026-05-27)
+
+#### 🎯 問題確認
+Runtime trace 發現 `climbingPrograms_owner` 內同時存在舊版與新版 program，造成 program_climbing_tech id 重複，畫面可能顯示舊版項目（攀岩技術、攀岩整合、死蟲式等）。
+
+#### ✅ 修正內容
+
+**Program Cache 混合資料清理**
+- ✅ **app.js:248-296** - 新增 `cleanupMixedProgramCache()` 函式
+- ✅ **啟動檢查機制** - 檢查 `climbingPrograms_owner/tester` 是否包含舊版項目
+- ✅ **自動清理** - 偵測到舊項目自動刪除 cache，強制重新載入新版 defaultPrograms
+- ✅ **安全範圍** - 只清理 program cache，不影響 entries/cloud/Supabase
+
+#### 📂 修改檔案
+- `app.js:152` - 在 `initializeApp()` 中調用清理函式
+- `app.js:248-296` - 新增混合 cache 清理邏輯
+
+#### 🔍 偵測舊版項目清單
+**自動清理觸發條件** (任一項目存在)：
+- `攀岩技術`, `攀岩整合` (舊分類名稱)
+- `死蟲式`, `核心穩定`, `張力傳導` (舊核心項目)
+- `肩胛控制`, `lock off` (舊肩胛項目)
+
+#### ✅ 驗收測試
+1. ✅ Owner reload 後，`climbingPrograms_owner` 僅包含新版 programs
+2. ✅ 攀岩分類僅顯示：技術、體能
+3. ✅ 核心項目僅包含：RKC 平板撐、下腹抬腿、單邊農夫走路、熊爬
+4. ✅ 不再出現：攀岩技術、攀岩整合、死蟲式、核心穩定、lock off
+
 #### 📊 修復驗證
 - ✅ **修改前檢查** - `請選擇Program` 存在於 app.js:2684
 - ✅ **修改後確認** - `請選擇課表` 取代原文案
