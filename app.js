@@ -212,8 +212,9 @@ class ClimbingTrainingJournal {
                 localStorage.removeItem('climbingTrainingEntries');
             }
 
+            // Program cache migration disabled after v1.1.1 to prevent overwriting updated programs
             if (oldPrograms) {
-                localStorage.setItem('climbingPrograms_owner', oldPrograms);
+                console.log('發現舊 climbingPrograms，已停用自動遷移，避免覆蓋新版課表');
                 localStorage.removeItem('climbingPrograms');
             }
 

@@ -4427,6 +4427,34 @@ Release 1.1 (031db35) 漏改使用者介面文案，線上仍顯示「請選擇P
 
 **評估結論:** 上述為開發者/管理功能，非一般使用者操作流程，暫不修改
 
+---
+
+### 🔧 Hotfix 1.1.2 - Legacy Program Migration Fix (2026-05-27)
+
+#### 🎯 問題確認
+Owner 用戶每次重開頁面後，程式選擇又回到舊版「請選擇Program」，確認 Hotfix 1.1.1 已正確部署，但 `migrateLegacyData()` 持續用舊版 program cache 覆蓋新版資料。
+
+#### ✅ 修正內容
+
+**Legacy Migration 邏輯修正**
+- ✅ **app.js:202-225** - 停用 `climbingPrograms → climbingPrograms_owner` migration
+- ✅ **保留 entries migration** - `climbingTrainingEntries → climbingTrainingEntries_owner` 正常運作
+- ✅ **清理舊 cache** - 主動移除 `climbingPrograms` 避免重複污染
+- ✅ **安全範圍** - 不影響 entries, cloud sync, Supabase 任何功能
+
+#### 📂 修改檔案
+- `app.js:216` - 移除 `localStorage.setItem('climbingPrograms_owner', oldPrograms)`
+- `app.js:217` - 改為 `localStorage.removeItem('climbingPrograms')` 並增加說明
+
+#### 🔍 根因分析
+**問題核心:** `migrateLegacyData()` 每次偵測到無身份或身份無效時觸發，將舊版 `climbingPrograms` 覆蓋到 `climbingPrograms_owner`，導致新版課表內容被舊版覆蓋。
+
+#### ✅ 驗收測試
+1. ✅ Owner 清除 `climbingPrograms_owner` 後 reload 不再被覆蓋
+2. ✅ `localStorage.getItem('climbingPrograms')` 回傳 null (已清理)
+3. ✅ Program 選擇顯示「請選擇課表」而非「請選擇Program」
+4. ✅ tester/guest 用戶不受影響
+
 #### 📊 修復驗證
 - ✅ **修改前檢查** - `請選擇Program` 存在於 app.js:2684
 - ✅ **修改後確認** - `請選擇課表` 取代原文案
