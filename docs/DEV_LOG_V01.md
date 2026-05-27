@@ -4550,3 +4550,61 @@ Runtime trace 發現 `climbingPrograms_owner` 內同時存在舊版與新版 pro
 **✅ Ready for Hotfix Deployment** - 單點文案修正，風險極低
 
 ---
+
+## 🎯 DEV-IDENTITY-1A - Tester Display Name Implementation (2026-05-27)
+
+### 🎯 目標達成
+實作測試員輕量身份識別 - 允許測試員輸入自訂顯示名稱，改善使用體驗感受。
+
+### ✅ 實作內容 (Method A+)
+
+**核心功能:**
+- ✅ **測試員登入介面** - 新增「你的名字」輸入欄位 (placeholder: 例如：瑤瑤)
+- ✅ **顯示名稱儲存** - `localStorage.setItem('testerDisplayName', inputName)`
+- ✅ **UI 顯示更新** - 所有介面顯示自訂名稱而非 "Alice"
+- ✅ **向下相容** - 未輸入時預設為 "測試員"
+
+**身份系統保持不變:**
+- ✅ `currentUser` 仍為 `'tester'`
+- ✅ localStorage keys 仍為 `*_tester`
+- ✅ Supabase Auth 仍使用 `alice@climbing.dev`
+- ✅ Cloud sync 完全不受影響
+
+### 📂 修改檔案
+
+**index.html:**
+- 新增 `#authDisplayName` 輸入欄位到驗證對話框
+
+**app.js:**
+- **showAuthDialog()** - 測試員模式顯示名稱輸入而非 email
+- **handleAuthSubmit()** - 測試員登入成功後保存 `testerDisplayName`
+- **updateUserIndicator()** - 顯示 `🧪 ${customName}` 
+- **UI 字串更新** - 7個位置將 "Alice" 替換為動態名稱
+
+**style.css:**
+- 無需修改 (現有 `.auth-form input` 樣式適用)
+
+### 🎯 驗收通過項目
+1. ✅ 測試員模式可輸入自訂名字 (例如：瑤瑤)
+2. ✅ 右上角顯示 `🧪 瑤瑤` 而非 `🧪 測試員`
+3. ✅ 重新載入後名稱保持不變 
+4. ✅ currentUser 維持 `'tester'` (身份系統未變)
+5. ✅ localStorage 仍使用 `climbingEntries_tester`
+6. ✅ Cloud sync 功能完全正常
+7. ✅ Owner/Guest 模式完全不受影響
+8. ✅ Release 1.2 Program System 完全不受影響
+
+### 🛡️ 安全原則確認
+- ❌ **未修改**: IDENTITY_CONFIG, SUPABASE_EMAIL_MAP
+- ❌ **未修改**: Supabase Auth, currentUser 邏輯
+- ❌ **未修改**: getStorageKey(), cloud sync
+- ❌ **未修改**: Program system, entries, export
+- ✅ **僅新增**: testerDisplayName localStorage key
+
+### 🎉 成果
+**Problem Solved:** 測試員不再感覺使用 "alice@climbing.dev" 別人帳號  
+**Experience Improved:** 測試員感受使用自己個人化帳號  
+**Risk Level:** 🟢 零風險 - 完全向下相容，核心系統未變  
+**Implementation:** Method A+ 輕量實作成功
+
+---

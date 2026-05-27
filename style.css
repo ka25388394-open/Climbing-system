@@ -438,6 +438,31 @@ input[type="checkbox"] {
     accent-color: #4a9eff;
 }
 
+/* 必填欄位驗證錯誤樣式 */
+.form-group.field-error {
+    padding: 0.5rem;
+    border: 2px solid rgba(255, 107, 107, 0.6);
+    border-radius: 8px;
+    background: rgba(255, 107, 107, 0.1);
+    animation: subtle-shake 0.3s ease-in-out;
+}
+
+.form-group.field-error label {
+    color: #ff9999;
+}
+
+select.field-error,
+input.field-error {
+    border-color: rgba(255, 107, 107, 0.8) !important;
+    background: rgba(255, 107, 107, 0.15) !important;
+}
+
+@keyframes subtle-shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-3px); }
+    75% { transform: translateX(3px); }
+}
+
 /* 修正 range slider 樣式 */
 input[type="range"] {
     background: rgba(255, 255, 255, 0.1);

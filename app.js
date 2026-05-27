@@ -417,6 +417,7 @@ class ClimbingTrainingJournal {
         const dialog = document.getElementById('authDialog');
         const title = document.getElementById('authTitle');
         const usernameInput = document.getElementById('authUsername');
+        const displayNameInput = document.getElementById('authDisplayName');
         const passwordInput = document.getElementById('authPassword');
 
         if (dialog && title) {
@@ -424,9 +425,21 @@ class ClimbingTrainingJournal {
             const modeText = identity === 'owner' ? '開發者' : identity === 'tester' ? '測試員' : '訪客';
             title.textContent = `進入 ${modeText} 模式`;
 
-            // 自動填入對應 email (方案 A)
-            if (usernameInput && SUPABASE_EMAIL_MAP[identity]) {
-                usernameInput.value = SUPABASE_EMAIL_MAP[identity];
+            if (identity === 'tester') {
+                // 測試員模式：顯示名稱輸入，隱藏 email
+                if (usernameInput) usernameInput.style.display = 'none';
+                if (displayNameInput) {
+                    displayNameInput.style.display = 'block';
+                    displayNameInput.placeholder = '你的名字';
+                    displayNameInput.value = localStorage.getItem('testerDisplayName') || '';
+                }
+            } else {
+                // 開發者模式：顯示 email，隱藏名稱輸入
+                if (displayNameInput) displayNameInput.style.display = 'none';
+                if (usernameInput) {
+                    usernameInput.style.display = 'block';
+                    usernameInput.value = SUPABASE_EMAIL_MAP[identity] || '';
+                }
             }
 
             // 清空密碼框
@@ -435,8 +448,12 @@ class ClimbingTrainingJournal {
             dialog.style.display = 'flex';
             dialog.dataset.identity = identity;
 
-            // 聚焦到密碼輸入框 (email 已自動填入且 readonly)
-            if (passwordInput) passwordInput.focus();
+            // 聚焦邏輯
+            if (identity === 'tester' && displayNameInput) {
+                displayNameInput.focus();
+            } else if (passwordInput) {
+                passwordInput.focus();
+            }
         }
     }
 
@@ -475,6 +492,14 @@ class ClimbingTrainingJournal {
             const authResult = await this.authenticateWithSupabase(identity, password);
 
             if (authResult.success) {
+                // 測試員模式：保存自訂顯示名稱
+                if (identity === 'tester') {
+                    const displayNameInput = document.getElementById('authDisplayName');
+                    const displayName = displayNameInput ? displayNameInput.value.trim() : '';
+                    const finalDisplayName = displayName || '測試員';
+                    localStorage.setItem('testerDisplayName', finalDisplayName);
+                }
+
                 this.setCurrentUser(identity);
                 this.hideAuthDialog();
                 this.hideIdentitySelector();
@@ -574,6 +599,15 @@ class ClimbingTrainingJournal {
 
     // 轉換本地 entry 為 Supabase entries 格式
     convertEntryToSupabaseFormat(entry, userId) {
+        // 確保 completion 值符合 Supabase 約束
+        const validCompletions = ['all', 'most', 'half', 'little'];
+        let cleanCompletion = entry.completion;
+
+        if (!cleanCompletion || !validCompletions.includes(cleanCompletion)) {
+            console.warn('Invalid completion value:', entry.completion, '-> fallback to "half"');
+            cleanCompletion = 'half';
+        }
+
         return {
             user_id: userId,
             legacy_timestamp: entry.timestamp,
@@ -583,7 +617,7 @@ class ClimbingTrainingJournal {
             program_id: entry.programId,
             program_name_snapshot: entry.programName,
             program_category_snapshot: entry.programCategory,
-            completion: entry.completion,
+            completion: cleanCompletion,
             item_states: entry.itemStates || {},
             missed_items: entry.missedItems || [],
             special_items: entry.specialItems || [],
@@ -623,12 +657,33 @@ class ClimbingTrainingJournal {
             // 轉換格式
             const supabaseRow = this.convertEntryToSupabaseFormat(entry, session.user.id);
 
+            // Debug: 輸出即將送出的資料
+            console.log('Supabase row payload:', supabaseRow);
+
+            // Debug: 檢查 completion 相關欄位
+            console.log('Cloud payload completion check:', {
+                completion: supabaseRow.completion,
+                training_type: supabaseRow.training_type,
+                today_condition: supabaseRow.today_condition,
+                program_name: supabaseRow.program_name,
+                flow: entry.flow,
+                rawCompletion: entry.completion
+            });
+
             // Insert 到 Supabase entries 表 (暫時使用 insert，未啟用 upsert)
             const { data, error } = await window.climbingSupabaseClient
                 .from('entries')
                 .insert(supabaseRow);
 
             if (error) {
+                // Debug: 輸出完整錯誤資訊
+                console.error('Supabase insert error full:', {
+                    message: error?.message,
+                    details: error?.details,
+                    hint: error?.hint,
+                    code: error?.code
+                });
+
                 return {
                     success: false,
                     error: error
@@ -888,7 +943,13 @@ class ClimbingTrainingJournal {
         section.style.display = 'block';
 
         // 更新資訊列
-        const roleText = userRole === 'owner' ? '開發者' : '測試員';
+        let roleText;
+        if (userRole === 'owner') {
+            roleText = '開發者';
+        } else {
+            const testerName = localStorage.getItem('testerDisplayName') || '測試員';
+            roleText = testerName;
+        }
         const permissionText = userRole === 'owner' ? '（包含開發者和測試員紀錄）' : '（僅自己紀錄）';
         info.innerHTML = `<p>📍 來源：Supabase | 👤 身份：${roleText} | 📅 最近10筆 ${permissionText}</p>`;
 
@@ -1353,8 +1414,15 @@ class ClimbingTrainingJournal {
     updateUserIndicator() {
         const display = document.getElementById('currentUserDisplay');
         if (display && this.currentUser) {
-            const config = IDENTITY_CONFIG[this.currentUser];
-            display.textContent = config.displayName || this.currentUser;
+            if (this.currentUser === 'tester') {
+                // 測試員模式：顯示自訂名稱
+                const customName = localStorage.getItem('testerDisplayName') || '測試員';
+                display.textContent = `🧪 ${customName}`;
+            } else {
+                // 其他模式：使用原有邏輯
+                const config = IDENTITY_CONFIG[this.currentUser];
+                display.textContent = config.displayName || this.currentUser;
+            }
         }
     }
 
@@ -2307,6 +2375,31 @@ class ClimbingTrainingJournal {
             if (selectedTemplate) {
                 this.loadTemplate(selectedTemplate);
             }
+        });
+
+        // 必填欄位驗證 - 清除錯誤高亮
+        const removeFieldError = (element) => {
+            const formGroup = element.closest('.form-group');
+            if (formGroup) {
+                formGroup.classList.remove('field-error');
+            }
+            element.classList.remove('field-error');
+        };
+
+        // 監聽訓練類型選擇
+        document.querySelectorAll('input[name="trainingType"]').forEach(radio => {
+            radio.addEventListener('change', () => removeFieldError(radio));
+        });
+
+        // 監聽課表選擇
+        const programSelect = document.getElementById('programSelect');
+        if (programSelect) {
+            programSelect.addEventListener('change', () => removeFieldError(programSelect));
+        }
+
+        // 監聽完成度選擇
+        document.querySelectorAll('input[name="completion"]').forEach(radio => {
+            radio.addEventListener('change', () => removeFieldError(radio));
         });
     }
 
@@ -3455,8 +3548,77 @@ class ClimbingTrainingJournal {
         return result;
     }
 
+    // 驗證 Challenge Flow 必填欄位
+    validateChallengeForm() {
+        const missingFields = [];
+
+        // 檢查訓練類型
+        const selectedTrainingType = document.querySelector('input[name="trainingType"]:checked');
+        if (!selectedTrainingType) {
+            missingFields.push('trainingType');
+        }
+
+        // 檢查課表選擇
+        const programSelect = document.getElementById('programSelect');
+        if (!programSelect.value || programSelect.value === '') {
+            missingFields.push('programSelect');
+        }
+
+        // 檢查完成度
+        const selectedCompletion = document.querySelector('input[name="completion"]:checked');
+        if (!selectedCompletion) {
+            missingFields.push('completion');
+        }
+
+        return {
+            valid: missingFields.length === 0,
+            missingFields: missingFields
+        };
+    }
+
+    // 高亮缺失欄位
+    highlightMissingFields(missingFields) {
+        // 清除所有現有的錯誤高亮
+        document.querySelectorAll('.field-error').forEach(element => {
+            element.classList.remove('field-error');
+        });
+
+        missingFields.forEach(fieldName => {
+            if (fieldName === 'trainingType') {
+                // 高亮訓練類型 radio group 容器
+                const trainingTypeGroup = document.querySelector('input[name="trainingType"]').closest('.form-group');
+                if (trainingTypeGroup) {
+                    trainingTypeGroup.classList.add('field-error');
+                }
+            } else if (fieldName === 'programSelect') {
+                // 高亮課表 select
+                const programSelect = document.getElementById('programSelect');
+                if (programSelect) {
+                    programSelect.classList.add('field-error');
+                }
+            } else if (fieldName === 'completion') {
+                // 高亮完成度 radio group 容器
+                const completionGroup = document.querySelector('input[name="completion"]').closest('.form-group');
+                if (completionGroup) {
+                    completionGroup.classList.add('field-error');
+                }
+            }
+        });
+    }
+
     // 處理表單提交
     handleFormSubmit() {
+        // 檢查是否為第一次紀錄（在任何操作前判斷）
+        const wasFirstEntry = this.entries.length === 0;
+
+        // 驗證必填欄位
+        const validation = this.validateChallengeForm();
+        if (!validation.valid) {
+            this.highlightMissingFields(validation.missingFields);
+            this.showToast('還有幾個欄位沒選完，再補一下就可以儲存了', 'warning');
+            return;
+        }
+
         const formData = this.getFormData();
 
         // 檢查是否為編輯模式
@@ -3491,9 +3653,6 @@ class ClimbingTrainingJournal {
         } else {
             // 新增模式：v0.2-D 允許同日期多筆紀錄
 
-            // 檢查是否為第一次紀錄（在 push 前判斷）
-            const wasFirstEntry = this.entries.length === 0;
-
             // v0.2-ECHO-4B: 生成 Echo 回應
             const echoResponse = this.generateEchoResponse(formData);
 
@@ -3526,8 +3685,9 @@ class ClimbingTrainingJournal {
         this.showJournalCompanionMessage(formData.todayCondition, this.entries.length);
 
         // 檢查是否需要顯示 onboarding
+        const isFirstEntry = wasFirstEntry; // 捕獲變數值供 setTimeout 使用
         setTimeout(() => {
-            this.checkFirstTimeOnboarding(wasFirstEntry);
+            this.checkFirstTimeOnboarding(isFirstEntry);
         }, 500);
     }
 
@@ -3568,8 +3728,9 @@ class ClimbingTrainingJournal {
         this.showJournalCompanionMessage(lifeEntryData.todayCondition, this.entries.length);
 
         // 檢查是否需要顯示 onboarding
+        const isFirstEntry = wasFirstEntry; // 捕獲變數值供 setTimeout 使用
         setTimeout(() => {
-            this.checkFirstTimeOnboarding(wasFirstEntry);
+            this.checkFirstTimeOnboarding(isFirstEntry);
         }, 500);
     }
 
@@ -3610,8 +3771,9 @@ class ClimbingTrainingJournal {
         this.showJournalCompanionMessage(easyEntryData.todayCondition, this.entries.length);
 
         // 檢查是否需要顯示 onboarding
+        const isFirstEntry = wasFirstEntry; // 捕獲變數值供 setTimeout 使用
         setTimeout(() => {
-            this.checkFirstTimeOnboarding(wasFirstEntry);
+            this.checkFirstTimeOnboarding(isFirstEntry);
         }, 500);
     }
 
@@ -3669,7 +3831,7 @@ class ClimbingTrainingJournal {
 
         // v0.2-REST-1-1: 處理疲憊模式資料
         let trainingType = document.querySelector('input[name="trainingType"]:checked')?.value || '';
-        let completion = document.querySelector('input[name="completion"]:checked')?.value || '';
+        let completion = document.querySelector('input[name="completion"]:checked')?.value || 'half';
         let movementNotes = document.getElementById('movementNotes').value;
 
         if (todayCondition === 'exhausted') {
@@ -4028,8 +4190,8 @@ class ClimbingTrainingJournal {
 
     // 匯出 CSV
     exportToCSV() {
-        if (this.entries.length === 0) {
-            alert('沒有資料可以匯出');
+        if (!this.entries || this.entries.length === 0) {
+            this.showToast('目前還沒有紀錄可以匯出', 'warning');
             return;
         }
 
@@ -4078,8 +4240,8 @@ class ClimbingTrainingJournal {
 
     // 匯出 JSON
     exportToJSON() {
-        if (this.entries.length === 0) {
-            alert('沒有資料可以匯出');
+        if (!this.entries || this.entries.length === 0) {
+            this.showToast('目前還沒有紀錄可以匯出', 'warning');
             return;
         }
 
@@ -4227,6 +4389,11 @@ class ClimbingTrainingJournal {
 
     // 匯出完整備份
     exportBackup() {
+        if (!this.entries || this.entries.length === 0) {
+            this.showToast('目前還沒有紀錄可以匯出', 'warning');
+            return;
+        }
+
         const backupJSON = this.createBackupJSON();
 
         const blob = new Blob([JSON.stringify(backupJSON, null, 2)], { type: 'application/json' });
@@ -4765,7 +4932,8 @@ class ClimbingTrainingJournal {
         const sendToTester = document.getElementById('sendToTester');
         if (sendToTester && !sendToTester.dataset.bound) {
             sendToTester.addEventListener('click', () => {
-                const text = prompt('寫一張給 Alice 的小紙條');
+                const testerName = localStorage.getItem('testerDisplayName') || '測試員';
+                const text = prompt(`寫一張給 ${testerName} 的小紙條`);
                 if (text && text.trim()) {
                     this.addMessageToTester(text.trim());
                     this.showToast('已發送給測試員');
@@ -4993,11 +5161,12 @@ class ClimbingTrainingJournal {
                        msg.type === 'developer' ? 'Xavier' : 'Xavier'
         }));
 
+        const testerDisplayName = localStorage.getItem('testerDisplayName') || 'Alice';
         const testerWithSource = testerMessages.map(msg => ({
             ...msg,
             sourceName: msg.type === 'auto' ? '小留言本的回覆' :
                        msg.type === 'official' ? '小留言本的正式回覆' :
-                       msg.type === 'developer' ? 'Xavier' : 'Alice'
+                       msg.type === 'developer' ? 'Xavier' : testerDisplayName
         }));
 
         // 合併並按時間排序
@@ -5044,7 +5213,8 @@ class ClimbingTrainingJournal {
         if (this.currentUser !== 'owner') return;
 
         // 確認操作
-        if (!confirm('確定要重置 Alice 的留言測試狀態嗎？這只會清除 Alice 的留言、未讀提示與留言引導，不會清 Daily Journal。')) {
+        const testerName = localStorage.getItem('testerDisplayName') || 'Alice';
+        if (!confirm(`確定要重置 ${testerName} 的留言測試狀態嗎？這只會清除 ${testerName} 的留言、未讀提示與留言引導，不會清 Daily Journal。`)) {
             return;
         }
 
@@ -5056,7 +5226,7 @@ class ClimbingTrainingJournal {
         // 刷新顯示
         this.renderMessages();
         this.updateMessageIcon();
-        this.showToast('Alice 留言測試已重置');
+        this.showToast(`${testerName} 留言測試已重置`);
     }
 
     // Owner 清理自己的留言空間
@@ -5065,7 +5235,8 @@ class ClimbingTrainingJournal {
         if (this.currentUser !== 'owner') return;
 
         // 確認操作
-        if (!confirm('確定要清理 Xavier 的留言空間嗎？這只會清除開發者自己的留言，不會清 Alice 的留言與 Daily Journal。')) {
+        const testerName = localStorage.getItem('testerDisplayName') || 'Alice';
+        if (!confirm(`確定要清理 Xavier 的留言空間嗎？這只會清除開發者自己的留言，不會清 ${testerName} 的留言與 Daily Journal。`)) {
             return;
         }
 
